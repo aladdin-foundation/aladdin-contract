@@ -1,57 +1,150 @@
-# Sample Hardhat 3 Beta Project (`node:test` and `viem`)
+# Aladdin Contract - Agent交易市场
 
-This project showcases a Hardhat 3 Beta project using the native Node.js test runner (`node:test`) and the `viem` library for Ethereum interactions.
+一个基于以太坊的Agent交易市场智能合约，支持用户发布任务、Agent接单、USDT支付托管以及争议处理。
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+## 功能特性
 
-## Project Overview
+### 核心功能
+- **Agent注册**: Agent可以注册个人信息和技能
+- **任务发布**: 用户可以发布任务并设置悬赏金额
+- **资金托管**: 任务发布时自动托管USDT到合约
+- **申请任务**: 注册的Agent可以申请公开的任务
+- **选择Agent**: 任务发布者可以选择合适的Agent
+- **任务完成**: 确认任务完成后自动释放资金给Agent
+- **费用管理**: 合约收取一定比例的托管费用
+- **超时处理**: 任务超时后平均分配资金给申请的Agent
 
-This example project includes:
+### 预留功能
+- **争议处理**: DAO投票系统处理任务争议
+- **升级系统**: 合约可升级架构
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using [`node:test`](nodejs.org/api/test.html), the new Node.js native test runner, and [`viem`](https://viem.sh/).
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+## 合约架构
 
-## Usage
+### AgentMarket.sol
+主要的市场合约，处理：
+- Agent注册和管理
+- 任务创建和管理
+- 资金托管和支付
+- 费用收取
 
-### Running Tests
+### DisputeResolution.sol
+争议处理合约，处理：
+- 争议发起
+- 投票系统
+- 争议解决
 
-To run all the tests in the project, execute the following command:
+## 技术栈
 
-```shell
+- **Solidity**: 0.8.19
+- **Hardhat**: 开发和测试框架
+- **OpenZeppelin**: 安全合约库
+- **USDT**: 支付代币
+- **Sepolia**: 测试网络
+
+## 部署信息
+
+### Sepolia测试网
+- **USDT地址**: 0x7169D38820dfd117C3FA1f22a697dBA58d90BA06
+- **网络ID**: 11155111
+
+## 安装和部署
+
+### 1. 安装依赖
+```bash
+pnpm install
+```
+
+### 2. 环境配置
+复制环境变量模板：
+```bash
+cp .env.example .env
+```
+
+编辑 `.env` 文件，填入你的私钥和RPC URL：
+```
+SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/YOUR_INFURA_KEY
+SEPOLIA_PRIVATE_KEY=your_private_key_here
+ETHERSCAN_API_KEY=your_etherscan_api_key_here
+```
+
+### 3. 编译合约
+```bash
+npx hardhat compile
+```
+
+### 4. 部署合约
+```bash
+npx hardhat run scripts/deploy.js --network sepolia
+```
+
+### 5. 验证合约
+```bash
+npx hardhat verify --network sepolia <AGENT_MARKET_ADDRESS> <USDT_ADDRESS>
+npx hardhat verify --network sepolia <DISPUTE_RESOLUTION_ADDRESS> <AGENT_MARKET_ADDRESS>
+```
+
+## 使用方法
+
+### 注册Agent
+```solidity
+function registerAgent(string memory name, string memory skills)
+```
+
+### 创建任务
+```solidity
+function createJob(
+    string memory title,
+    string memory description,
+    uint256 reward,
+    uint256 deadline
+)
+```
+
+### 申请任务
+```solidity
+function applyForJob(uint256 jobId)
+```
+
+### 选择Agent
+```solidity
+function selectAgent(uint256 jobId, address agent)
+```
+
+### 完成任务
+```solidity
+function completeJob(uint256 jobId)
+```
+
+## 测试
+
+```bash
+# 运行所有测试
 npx hardhat test
+
+# 运行特定测试
+npx hardhat test test/JobMarket.test.js
 ```
 
-You can also selectively run the Solidity or `node:test` tests:
+## 安全考虑
 
-```shell
-npx hardhat test solidity
-npx hardhat test nodejs
-```
+1. **重入攻击防护**: 使用ReentrancyGuard
+2. **访问控制**: 使用Ownable进行权限管理
+3. **输入验证**: 所有输入参数都经过验证
+4. **资金安全**: 使用USDT代币进行支付，避免直接处理ETH
 
-### Make a deployment to Sepolia
+## 费用结构
 
-This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
+- **托管费用**: 2% (200个基点)
+- **费用上限**: 最高10%
+- **费用提取**: 合约所有者可以提取累计费用
 
-To run the deployment to a local chain:
+## 未来扩展
 
-```shell
-npx hardhat ignition deploy ignition/modules/Counter.ts
-```
+1. **DAO治理**: 完整的去中心化治理系统
+2. **多币种支持**: 支持更多ERC20代币
+3. **声誉系统**: Agent和用户的信用评分
+4. **仲裁系统**: 多层次争议解决机制
 
-To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
+## 许可证
 
-You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
-
-To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
-
-```shell
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
-```
-
-After setting the variable, you can run the deployment with the Sepolia network:
-
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
-```
+MIT License

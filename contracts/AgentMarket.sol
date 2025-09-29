@@ -3,9 +3,11 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract AgentMarket is Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
     IERC20 public usdtToken;
 
     uint256 public feePercentage = 200; // 2% fee (200 basis points)
@@ -29,6 +31,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
 
     mapping(address => Agent) public agents;
     mapping(uint256 => Employment) public employments;
+    mapping(uint256 => uint256) public employmentBalances;
     uint256 public employmentCounter;
 
     event AgentRegistered(
@@ -43,9 +46,14 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         uint256 payment
     );
     event EmploymentCompleted(uint256 indexed employmentId, uint256 payment);
-    event PaymentReleased(address[] indexed agents, uint256[] amounts);
+    event PaymentReleased(
+        uint256 indexed employmentId,
+        address[] agents,
+        uint256[] amounts
+    );
 
     constructor(address _usdtAddress) Ownable(msg.sender) {
+        require(_usdtAddress != address(0), "Invalid token");
         usdtToken = IERC20(_usdtAddress);
     }
 
@@ -57,6 +65,8 @@ contract AgentMarket is Ownable, ReentrancyGuard {
             agents[msg.sender].agentAddress == address(0),
             "Already registered"
         );
+        require(ratePerDay > 0, "Rate must be positive");
+        require(_skills.length > 0, "Skills cannot be empty");
 
         agents[msg.sender] = Agent({
             agentAddress: msg.sender,
@@ -78,7 +88,26 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         uint256 duration,
         uint256 payment
     ) external {
+        require(agentAddresses.length > 0, "No agents specified");
+        require(duration > 0, "Duration must be positive");
+        require(payment > 0, "Payment must be positive");
+
         uint256 employmentId = ++employmentCounter;
+        uint256 totalExpectedCost = 0;
+        for (uint i = 0; i < agentAddresses.length; i++) {
+            Agent storage agent = agents[agentAddresses[i]];
+            require(agent.agentAddress != address(0), "Agent not registered");
+            totalExpectedCost += agent.ratePerDay * duration;
+        }
+        require(
+            payment >= totalExpectedCost,
+            "Payment too low for rates and duration"
+        );
+
+        // 锁定资金：从雇主转移 payment 到合约
+        usdtToken.safeTransferFrom(msg.sender, address(this), payment);
+        employmentBalances[employmentId] = payment;
+
         employments[employmentId] = Employment({
             user: msg.sender,
             agents: agentAddresses,
@@ -91,7 +120,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     }
 
     /**
-     * 雇员完成工作（上传交付哈希）
+     * 雇员完成工作（按权重 ratePerDay * duration 分配）
      * @param _empId 雇佣ID
      */
     function completeEngagement(uint256 _empId) external nonReentrant {
@@ -99,7 +128,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         require(msg.sender == emp.user, "Not employer");
         require(emp.isActive, "Not active");
         require(msg.sender == emp.user, "Not employer");
-        require(emp.isCompleted, "Not completed");
+        require(!emp.isCompleted, "Already completed");
 
         uint256 numAgents = emp.agents.length;
         uint256 totalFee = (emp.payment * feePercentage) / FEE_PRECISION;
@@ -116,13 +145,11 @@ contract AgentMarket is Ownable, ReentrancyGuard {
 
         // 先转移手续费给owner
         if (totalFee > 0) {
-            require(
-                usdtToken.transfer(owner(), totalFee),
-                "Fee transfer failed"
-            );
+            usdtToken.safeTransfer(owner(), totalFee);
         }
 
         uint256 remainder = totalAgentShare % sumRates;
+        uint256[] memory amounts = new uint256[](numAgents);
         for (uint i = 0; i < numAgents; ++i) {
             uint256 agentRate = agentRates[i];
             uint256 baseAmount = (totalAgentShare * agentRate) / sumRates;
@@ -131,15 +158,15 @@ contract AgentMarket is Ownable, ReentrancyGuard {
             if (i < (remainder * agentRate) / sumRates) {
                 amount += 1;
             }
-            require(
-                usdtToken.transfer(emp.agents[i], amount),
-                "Transfer failed"
-            );
+            usdtToken.safeTransfer(emp.agents[i], amount);
         }
 
+        employmentBalances[_empId] = 0;
         emp.isCompleted = true;
+        emp.isActive = false;
+
+        emit PaymentReleased(_empId, emp.agents, amounts);
         emit EmploymentCompleted(_empId, emp.payment);
-        // emit PaymentReleased(emp.agents, emp.payment);
     }
 
     /**

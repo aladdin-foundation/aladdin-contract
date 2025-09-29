@@ -125,9 +125,11 @@ contract AgentMarket is Ownable, ReentrancyGuard {
      */
     function completeEngagement(uint256 _empId) external nonReentrant {
         Employment storage emp = employments[_empId];
-        require(msg.sender == emp.user, "Not employer");
+        require(
+            msg.sender == emp.user || msg.sender == owner(),
+            "No permission"
+        );
         require(emp.isActive, "Not active");
-        require(msg.sender == emp.user, "Not employer");
         require(!emp.isCompleted, "Already completed");
 
         uint256 numAgents = emp.agents.length;

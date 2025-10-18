@@ -32,7 +32,8 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     error InsufficientBalance();
 
     struct Agent {
-        address agentAddress;
+        uint256 id; // 唯一ID
+        address owner; // Agent拥有者地址
         uint256 ratePerDay; // 每天的收费标准
         string[] skills; // 技能标签
         uint256 reputation; // 声誉积分，可以根据完成的job数量和质量来提升
@@ -40,7 +41,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
 
     struct Employment {
         address user; // 雇主
-        address[] agents; // 被雇佣的Agent数组
+        uint256[] agents; // 被雇佣的Agent数组
         uint256 startTime; // 雇佣开始时间
         uint256 duration; // 雇佣持续时间（天）
         uint256 payment; // 报酬金额
@@ -48,27 +49,27 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         bool isCompleted; // 雇佣是否已完成
     }
 
-    mapping(address => Agent) public agents;
+    mapping(uint256 => Agent) public agents; // agentId => Agent
+    mapping(address => uint256[]) public ownerAgents; // owner address => agentIds
     mapping(uint256 => Employment) public employments;
     mapping(uint256 => uint256) public employmentBalances;
+    uint256 public agentCounter;
     uint256 public employmentCounter;
-    // 创建雇佣时的临时去重缓存
-    mapping(address => bool) private agentSelectionCache;
 
     // 新增：用户托管余额
     mapping(address => uint256) public userBalances;
     event Deposited(address indexed user, uint256 amount);
-    event Withdrawn(address indexed user, uint256 amount);
 
     event AgentRegistered(
-        address indexed agentAddress,
+        uint256 indexed agentId,
+        address indexed owner,
         string[] skills,
         uint256 ratePerDay
     );
     event EmploymentCreated(
         uint256 indexed employmentId,
         address indexed user,
-        address[] agents,
+        uint256[] agents,
         uint256 payment
     );
     event EmploymentCompleted(uint256 indexed employmentId, uint256 payment);
@@ -87,18 +88,26 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         string[] calldata _skills,
         uint256 ratePerDay
     ) external {
-        if (agents[msg.sender].agentAddress != address(0))
-            revert AlreadyRegistered();
         if (ratePerDay == 0) revert InvalidRate();
         if (_skills.length == 0) revert EmptySkills();
 
-        agents[msg.sender] = Agent({
-            agentAddress: msg.sender,
-            ratePerDay: ratePerDay,
-            skills: _skills,
-            reputation: 0
-        });
-        emit AgentRegistered(msg.sender, _skills, ratePerDay);
+        uint256 agentId = ++agentCounter;
+
+        Agent storage a = agents[agentId];
+        a.id = agentId;
+        a.owner = msg.sender;
+        a.ratePerDay = ratePerDay;
+        
+        // Copy skills from calldata to storage explicitly
+        for (uint256 i = 0; i < _skills.length; i++) {
+            a.skills.push(_skills[i]);
+        }
+        
+        a.reputation = 0;
+
+        ownerAgents[msg.sender].push(agentId);
+
+        emit AgentRegistered(agentId, msg.sender, _skills, ratePerDay);
     }
 
     // 1) 充值（需要先对 usdt.approve(market, amount)）
@@ -109,54 +118,48 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         emit Deposited(msg.sender, amount);
     }
 
-    // 2) 提现
-    function withdraw(uint256 amount) external nonReentrant {
-        if (amount == 0 || userBalances[msg.sender] < amount)
-            revert InvalidPayment();
-        userBalances[msg.sender] -= amount;
-        usdtToken.safeTransfer(msg.sender, amount);
-        emit Withdrawn(msg.sender, amount);
-    }
-
     /**
      * Off-Chain协商后，上链建立雇佣关系（锁定报酬）
-     * @param agentAddresses 被雇佣的Agent
+     * @param payer 扣款账户（托管余额从这个地址中扣）
+     * @param agentIds 被雇佣的Agent
      * @param duration 雇佣持续时间（天）
      * @param payment 支付金额
      */
     function createEmployment(
-        address[] memory agentAddresses,
+        address payer,
+        uint256[] memory agentIds,
         uint256 duration,
         uint256 payment
     ) external {
-        if (agentAddresses.length == 0 || agentAddresses.length > MAX_AGENTS)
+        if (agentIds.length == 0 || agentIds.length > MAX_AGENTS)
             revert InvalidAgentsLength();
         if (duration == 0) revert InvalidDuration();
         if (payment == 0) revert InvalidPayment();
-        if (userBalances[msg.sender] < payment) revert InsufficientBalance();
+        if (payer == address(0)) revert InvalidPayment();
+        if (userBalances[payer] < payment) revert InsufficientBalance();
+
         uint256 employmentId = ++employmentCounter;
         uint256 totalExpectedCost = 0;
-        uint256 length = agentAddresses.length;
+        uint256 length = agentIds.length;
+
         for (uint i = 0; i < length; ++i) {
-            address agentAddr = agentAddresses[i];
-            if (agentSelectionCache[agentAddr]) revert DuplicateAgent();
-            Agent storage agent = agents[agentAddr];
-            if (agent.agentAddress == address(0)) revert AgentNotRegistered();
-            totalExpectedCost += agent.ratePerDay * duration;
-            agentSelectionCache[agentAddr] = true;
+            uint256 aid = agentIds[i];
+            Agent storage agent = agents[aid];
+            if (agent.owner == address(0)) revert AgentNotRegistered();
+
+            unchecked {
+                totalExpectedCost += agent.ratePerDay * duration;
+            }
         }
         if (payment < totalExpectedCost) revert PaymentTooLow();
-        for (uint i = 0; i < length; ++i) {
-            agentSelectionCache[agentAddresses[i]] = false;
-        }
 
         // 锁定资金：从用户托管余额扣除对应金额
-        userBalances[msg.sender] -= payment;
+        userBalances[payer] -= payment;
         employmentBalances[employmentId] = payment;
 
         employments[employmentId] = Employment({
-            user: msg.sender,
-            agents: agentAddresses,
+            user: payer,
+            agents: agentIds,
             startTime: block.timestamp,
             duration: duration,
             payment: payment,
@@ -164,12 +167,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
             isCompleted: false
         });
 
-        emit EmploymentCreated(
-            employmentId,
-            msg.sender,
-            agentAddresses,
-            payment
-        );
+        emit EmploymentCreated(employmentId, payer, agentIds, payment);
     }
 
     /**
@@ -218,23 +216,36 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         for (uint i = 0; i < numAgents; ++i) {
             uint256 amount = amounts[i];
             if (amount == 0) revert TransferFailed();
-            usdtToken.safeTransfer(emp.agents[i], amount);
+            usdtToken.safeTransfer(agents[emp.agents[i]].owner, amount);
         }
 
         employmentBalances[_empId] = 0;
         emp.isCompleted = true;
         emp.isActive = false;
 
-        emit PaymentReleased(_empId, emp.agents, amounts);
+        address[] memory agentOwners = new address[](numAgents);
+        for (uint i = 0; i < numAgents; ++i) {
+            agentOwners[i] = agents[emp.agents[i]].owner;
+        }
+        emit PaymentReleased(_empId, agentOwners, amounts);
         emit EmploymentCompleted(_empId, emp.payment);
     }
 
     /**
      * 获取Agent详情
-     * @param agentAddress Agent地址
+     * @param agentId AgentId
      * @return Agent信息
      */
-    function getAgent(address agentAddress) public view returns (Agent memory) {
-        return agents[agentAddress];
+    function getAgent(uint256 agentId) public view returns (Agent memory) {
+        return agents[agentId];
+    }
+
+    /**
+     * 获取某地址名下的所有 agentId
+     */
+    function getOwnerAgents(
+        address ownerAddr
+    ) external view returns (uint256[] memory) {
+        return ownerAgents[ownerAddr];
     }
 }

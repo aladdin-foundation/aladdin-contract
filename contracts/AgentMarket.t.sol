@@ -50,8 +50,12 @@ contract AgentMarketTest is Test {
         address[] memory agentsList = new address[](1);
         agentsList[0] = AGENT_ONE;
 
+        vm.startPrank(USER);
+        usdt.approve(address(market), 100 ether);
+        market.deposit(100 ether);
         vm.expectRevert(AgentMarket.AgentNotRegistered.selector);
         market.createEmployment(agentsList, 1, 100 ether);
+        vm.stopPrank();
     }
 
     function test_CreateEmployment_ShouldLockFunds() public {
@@ -62,12 +66,14 @@ contract AgentMarketTest is Test {
 
         vm.startPrank(USER);
         usdt.approve(address(market), 500 ether);
+        market.deposit(500 ether);
         market.createEmployment(agentsList, 2, 500 ether);
         vm.stopPrank();
 
         assertEq(market.employmentCounter(), 1, unicode"计数器未更新");
         assertEq(market.employmentBalances(1), 500 ether, unicode"托管金额不正确");
         assertEq(usdt.balanceOf(address(market)), 500 ether, unicode"合约持有金额异常");
+        assertEq(market.userBalances(USER), 0, unicode"用户托管余额应扣除");
 
         (
             address jobUser,
@@ -92,9 +98,21 @@ contract AgentMarketTest is Test {
         agentsList[0] = AGENT_ONE;
 
         vm.startPrank(USER);
-        usdt.approve(address(market), 50 ether);
+        usdt.approve(address(market), 100 ether);
+        market.deposit(100 ether);
         vm.expectRevert(AgentMarket.PaymentTooLow.selector);
         market.createEmployment(agentsList, 1, 50 ether);
+        vm.stopPrank();
+    }
+
+    function test_CreateEmployment_RevertWhenInsufficientBalance() public {
+        _registerAgent(AGENT_ONE, 10 ether, "infra");
+        address[] memory agentsList = new address[](1);
+        agentsList[0] = AGENT_ONE;
+
+        vm.startPrank(USER);
+        vm.expectRevert(AgentMarket.InsufficientBalance.selector);
+        market.createEmployment(agentsList, 1, 10 ether);
         vm.stopPrank();
     }
 
@@ -108,6 +126,7 @@ contract AgentMarketTest is Test {
 
         vm.startPrank(USER);
         usdt.approve(address(market), 1_000 ether);
+        market.deposit(1_000 ether);
         market.createEmployment(agentsList, 2, 1_000 ether);
         vm.stopPrank();
 
@@ -165,6 +184,7 @@ contract AgentMarketTest is Test {
 
         vm.startPrank(USER);
         usdt.approve(address(market), 200 ether);
+        market.deposit(200 ether);
         market.createEmployment(agentsList, 1, 200 ether);
         vm.stopPrank();
 

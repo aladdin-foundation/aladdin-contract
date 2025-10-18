@@ -29,6 +29,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     error NoValidRates();
     error TransferFailed();
     error DuplicateAgent();
+    error InsufficientBalance();
 
     struct Agent {
         address agentAddress;
@@ -51,6 +52,13 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     mapping(uint256 => Employment) public employments;
     mapping(uint256 => uint256) public employmentBalances;
     uint256 public employmentCounter;
+    // 创建雇佣时的临时去重缓存
+    mapping(address => bool) private agentSelectionCache;
+
+    // 新增：用户托管余额
+    mapping(address => uint256) public userBalances;
+    event Deposited(address indexed user, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
 
     event AgentRegistered(
         address indexed agentAddress,
@@ -93,6 +101,23 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         emit AgentRegistered(msg.sender, _skills, ratePerDay);
     }
 
+    // 1) 充值（需要先对 usdt.approve(market, amount)）
+    function deposit(uint256 amount) external {
+        if (amount == 0) revert InvalidPayment();
+        usdtToken.safeTransferFrom(msg.sender, address(this), amount);
+        userBalances[msg.sender] += amount;
+        emit Deposited(msg.sender, amount);
+    }
+
+    // 2) 提现
+    function withdraw(uint256 amount) external nonReentrant {
+        if (amount == 0 || userBalances[msg.sender] < amount)
+            revert InvalidPayment();
+        userBalances[msg.sender] -= amount;
+        usdtToken.safeTransfer(msg.sender, amount);
+        emit Withdrawn(msg.sender, amount);
+    }
+
     /**
      * Off-Chain协商后，上链建立雇佣关系（锁定报酬）
      * @param agentAddresses 被雇佣的Agent
@@ -108,24 +133,25 @@ contract AgentMarket is Ownable, ReentrancyGuard {
             revert InvalidAgentsLength();
         if (duration == 0) revert InvalidDuration();
         if (payment == 0) revert InvalidPayment();
-        for (uint i = 0; i < agentAddresses.length; ++i) {
-            address agentAddr = agentAddresses[i];
-            for (uint j = i + 1; j < agentAddresses.length; ++j) {
-                if (agentAddr == agentAddresses[j]) revert DuplicateAgent();
-            }
-        }
-
+        if (userBalances[msg.sender] < payment) revert InsufficientBalance();
         uint256 employmentId = ++employmentCounter;
         uint256 totalExpectedCost = 0;
-        for (uint i = 0; i < agentAddresses.length; ++i) {
-            Agent storage agent = agents[agentAddresses[i]];
+        uint256 length = agentAddresses.length;
+        for (uint i = 0; i < length; ++i) {
+            address agentAddr = agentAddresses[i];
+            if (agentSelectionCache[agentAddr]) revert DuplicateAgent();
+            Agent storage agent = agents[agentAddr];
             if (agent.agentAddress == address(0)) revert AgentNotRegistered();
             totalExpectedCost += agent.ratePerDay * duration;
+            agentSelectionCache[agentAddr] = true;
         }
         if (payment < totalExpectedCost) revert PaymentTooLow();
+        for (uint i = 0; i < length; ++i) {
+            agentSelectionCache[agentAddresses[i]] = false;
+        }
 
-        // 锁定资金：从雇主转移 payment 到合约
-        usdtToken.safeTransferFrom(msg.sender, address(this), payment);
+        // 锁定资金：从用户托管余额扣除对应金额
+        userBalances[msg.sender] -= payment;
         employmentBalances[employmentId] = payment;
 
         employments[employmentId] = Employment({

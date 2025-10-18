@@ -28,13 +28,12 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     error AlreadyCompleted();
     error NoValidRates();
     error TransferFailed();
-    error DuplicateAgent();
     error InsufficientBalance();
 
     struct Agent {
         uint256 id; // 唯一ID
         address owner; // Agent拥有者地址
-        uint256 ratePerDay; // 每天的收费标准
+        uint256 ratePer; // 每天的收费标准
         string[] skills; // 技能标签
         uint256 reputation; // 声誉积分，可以根据完成的job数量和质量来提升
     }
@@ -64,7 +63,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         uint256 indexed agentId,
         address indexed owner,
         string[] skills,
-        uint256 ratePerDay
+        uint256 ratePer
     );
     event EmploymentCreated(
         uint256 indexed employmentId,
@@ -86,9 +85,9 @@ contract AgentMarket is Ownable, ReentrancyGuard {
 
     function registerAgent(
         string[] calldata _skills,
-        uint256 ratePerDay
+        uint256 ratePer
     ) external {
-        if (ratePerDay == 0) revert InvalidRate();
+        if (ratePer == 0) revert InvalidRate();
         if (_skills.length == 0) revert EmptySkills();
 
         uint256 agentId = ++agentCounter;
@@ -96,7 +95,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         Agent storage a = agents[agentId];
         a.id = agentId;
         a.owner = msg.sender;
-        a.ratePerDay = ratePerDay;
+        a.ratePer = ratePer;
         
         // Copy skills from calldata to storage explicitly
         for (uint256 i = 0; i < _skills.length; i++) {
@@ -107,7 +106,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
 
         ownerAgents[msg.sender].push(agentId);
 
-        emit AgentRegistered(agentId, msg.sender, _skills, ratePerDay);
+        emit AgentRegistered(agentId, msg.sender, _skills, ratePer);
     }
 
     // 1) 充值（需要先对 usdt.approve(market, amount)）
@@ -148,7 +147,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
             if (agent.owner == address(0)) revert AgentNotRegistered();
 
             unchecked {
-                totalExpectedCost += agent.ratePerDay * duration;
+                totalExpectedCost += agent.ratePer * duration;
             }
         }
         if (payment < totalExpectedCost) revert PaymentTooLow();
@@ -171,7 +170,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     }
 
     /**
-     * 雇员完成工作（按权重 ratePerDay * duration 分配）
+     * 雇员完成工作（按权重 ratePer * duration 分配）
      * @param _empId 雇佣ID
      */
     function completeEngagement(uint256 _empId) external nonReentrant {
@@ -189,7 +188,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         uint256[] memory agentRates = new uint256[](numAgents);
         for (uint i = 0; i < numAgents; ++i) {
             Agent storage agent = agents[emp.agents[i]];
-            agentRates[i] = agent.ratePerDay * emp.duration;
+            agentRates[i] = agent.ratePer * emp.duration;
             sumRates += agentRates[i];
         }
         if (sumRates == 0) revert NoValidRates();

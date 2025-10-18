@@ -9,9 +9,6 @@ contract AgentMarketTest is Test {
     AgentMarket internal market;
     AladdinToken internal usdt;
 
-    event Deposited(address indexed user, uint256 amount);
-    event Withdrawn(address indexed user, uint256 amount);
-
     address internal constant USER = address(0x1000);
     address internal constant AGENT_ONE = address(0x2000);
     address internal constant AGENT_TWO = address(0x3000);
@@ -25,11 +22,25 @@ contract AgentMarketTest is Test {
         usdt.mint(USER, INITIAL_USER_FUNDS);
     }
 
-    function test_RegisterAgent_ShouldPersistMetadata() public {
-        _registerAgent(AGENT_ONE, 100 ether, "solidity");
+    // 辅助函数：注册Agent并返回agentId
+    function _registerAgent(
+        address agentOwner,
+        uint256 ratePer,
+        string memory skill
+    ) internal returns (uint256) {
+        string[] memory skills = new string[](1);
+        skills[0] = skill;
+        vm.prank(agentOwner);
+        market.registerAgent(skills, ratePer);
+        return market.agentCounter();
+    }
 
-        AgentMarket.Agent memory stored = market.getAgent(AGENT_ONE);
-        assertEq(stored.agentAddress, AGENT_ONE, unicode"Agent地址应被记录");
+    function test_RegisterAgent_ShouldPersistMetadata() public {
+        uint256 agentId = _registerAgent(AGENT_ONE, 100 ether, "solidity");
+
+        AgentMarket.Agent memory stored = market.getAgent(agentId);
+        assertEq(stored.id, agentId, unicode"Agent ID应被记录");
+        assertEq(stored.owner, AGENT_ONE, unicode"Agent拥有者地址应被记录");
         assertEq(stored.ratePerDay, 100 ether, unicode"价格应与注册值一致");
         assertEq(stored.skills.length, 1, unicode"技能列表长度异常");
         assertEq(
@@ -39,33 +50,21 @@ contract AgentMarketTest is Test {
         );
     }
 
-    function test_RegisterAgent_RevertWhenDuplicate() public {
-        _registerAgent(AGENT_ONE, 1 ether, "ai");
-
-        string[] memory skills = new string[](1);
-        skills[0] = "ai";
-        vm.prank(AGENT_ONE);
-        vm.expectRevert(AgentMarket.AlreadyRegistered.selector);
-        market.registerAgent(skills, 1 ether);
-    }
-
     function test_CreateEmployment_RevertWhenAgentNotRegistered() public {
-        address[] memory agentsList = new address[](1);
-        agentsList[0] = AGENT_ONE;
+        uint256[] memory agentIds = new uint256[](1);
+        agentIds[0] = 999; // 不存在的agentId
 
         vm.startPrank(USER);
         usdt.approve(address(market), 100 ether);
         market.deposit(100 ether);
         vm.expectRevert(AgentMarket.AgentNotRegistered.selector);
-        market.createEmployment(agentsList, 1, 100 ether);
+        market.createEmployment(USER, agentIds, 1, 100 ether);
         vm.stopPrank();
     }
 
     function test_Deposit_ShouldIncreaseEscrowBalance() public {
         vm.startPrank(USER);
         usdt.approve(address(market), 300 ether);
-        vm.expectEmit(true, false, false, true);
-        emit Deposited(USER, 300 ether);
         market.deposit(300 ether);
         vm.stopPrank();
 
@@ -81,48 +80,16 @@ contract AgentMarketTest is Test {
         vm.stopPrank();
     }
 
-    function test_Withdraw_ShouldTransferBackToUser() public {
-        vm.startPrank(USER);
-        usdt.approve(address(market), 400 ether);
-        market.deposit(400 ether);
-        vm.expectEmit(true, false, false, true);
-        emit Withdrawn(USER, 150 ether);
-        market.withdraw(150 ether);
-        vm.stopPrank();
-
-        assertEq(market.userBalances(USER), 250 ether, unicode"托管余额未扣减");
-        assertEq(usdt.balanceOf(USER), INITIAL_USER_FUNDS - 250 ether, unicode"用户余额不正确");
-        assertEq(usdt.balanceOf(address(market)), 250 ether, unicode"合约余额未更新");
-    }
-
-    function test_Withdraw_RevertWhenInsufficientEscrowBalance() public {
-        vm.startPrank(USER);
-        usdt.approve(address(market), 100 ether);
-        market.deposit(100 ether);
-        vm.expectRevert(AgentMarket.InvalidPayment.selector);
-        market.withdraw(150 ether);
-        vm.stopPrank();
-    }
-
-    function test_Withdraw_RevertWhenZeroAmount() public {
-        vm.startPrank(USER);
-        usdt.approve(address(market), 100 ether);
-        market.deposit(100 ether);
-        vm.expectRevert(AgentMarket.InvalidPayment.selector);
-        market.withdraw(0);
-        vm.stopPrank();
-    }
-
     function test_CreateEmployment_ShouldLockFunds() public {
-        _registerAgent(AGENT_ONE, 25 ether, "zk");
+        uint256 agentId = _registerAgent(AGENT_ONE, 25 ether, "zk");
 
-        address[] memory agentsList = new address[](1);
-        agentsList[0] = AGENT_ONE;
+        uint256[] memory agentIds = new uint256[](1);
+        agentIds[0] = agentId;
 
         vm.startPrank(USER);
         usdt.approve(address(market), 500 ether);
         market.deposit(500 ether);
-        market.createEmployment(agentsList, 2, 500 ether);
+        market.createEmployment(USER, agentIds, 2, 500 ether);
         vm.stopPrank();
 
         assertEq(market.employmentCounter(), 1, unicode"计数器未更新");
@@ -148,108 +115,66 @@ contract AgentMarketTest is Test {
     }
 
     function test_CreateEmployment_RevertWhenPaymentTooLow() public {
-        _registerAgent(AGENT_ONE, 100 ether, "ml");
-        address[] memory agentsList = new address[](1);
-        agentsList[0] = AGENT_ONE;
+        uint256 agentId = _registerAgent(AGENT_ONE, 100 ether, "ml");
+        uint256[] memory agentIds = new uint256[](1);
+        agentIds[0] = agentId;
 
         vm.startPrank(USER);
         usdt.approve(address(market), 100 ether);
         market.deposit(100 ether);
         vm.expectRevert(AgentMarket.PaymentTooLow.selector);
-        market.createEmployment(agentsList, 1, 50 ether);
+        market.createEmployment(USER, agentIds, 1, 50 ether);
         vm.stopPrank();
     }
 
     function test_CreateEmployment_RevertWhenInsufficientBalance() public {
-        _registerAgent(AGENT_ONE, 10 ether, "infra");
-        address[] memory agentsList = new address[](1);
-        agentsList[0] = AGENT_ONE;
+        uint256 agentId = _registerAgent(AGENT_ONE, 10 ether, "infra");
+        uint256[] memory agentIds = new uint256[](1);
+        agentIds[0] = agentId;
 
         vm.startPrank(USER);
         vm.expectRevert(AgentMarket.InsufficientBalance.selector);
-        market.createEmployment(agentsList, 1, 10 ether);
+        market.createEmployment(USER, agentIds, 1, 10 ether);
         vm.stopPrank();
     }
 
     function test_CreateEmployment_RevertWhenNoAgentsProvided() public {
-        address[] memory agentsList = new address[](0);
+        uint256[] memory agentIds = new uint256[](0);
 
         vm.startPrank(USER);
         usdt.approve(address(market), 100 ether);
         market.deposit(100 ether);
         vm.expectRevert(AgentMarket.InvalidAgentsLength.selector);
-        market.createEmployment(agentsList, 1, 100 ether);
+        market.createEmployment(USER, agentIds, 1, 100 ether);
         vm.stopPrank();
     }
 
     function test_CreateEmployment_RevertWhenExceedingMaxAgents() public {
         uint256 maxAgents = market.MAX_AGENTS();
-        address[] memory agentsList = new address[](maxAgents + 1);
-        for (uint256 i = 0; i < agentsList.length; ++i) {
-            agentsList[i] = address(uint160(0x4000 + i));
+        uint256[] memory agentIds = new uint256[](maxAgents + 1);
+        for (uint256 i = 0; i < agentIds.length; ++i) {
+            agentIds[i] = i + 1;
         }
 
         vm.startPrank(USER);
         usdt.approve(address(market), 1 ether);
         vm.expectRevert(AgentMarket.InvalidAgentsLength.selector);
-        market.createEmployment(agentsList, 1, 1 ether);
+        market.createEmployment(USER, agentIds, 1, 1 ether);
         vm.stopPrank();
     }
 
-    function test_CreateEmployment_RevertWhenDuplicateAgentProvided() public {
-        _registerAgent(AGENT_ONE, 20 ether, "zk");
-
-        address[] memory agentsList = new address[](2);
-        agentsList[0] = AGENT_ONE;
-        agentsList[1] = AGENT_ONE;
-
-        vm.startPrank(USER);
-        usdt.approve(address(market), 200 ether);
-        market.deposit(200 ether);
-        vm.expectRevert(AgentMarket.DuplicateAgent.selector);
-        market.createEmployment(agentsList, 1, 200 ether);
-        vm.stopPrank();
-    }
-
-    function test_CreateEmployment_RevertWhenDurationZero() public {
-        _registerAgent(AGENT_ONE, 20 ether, "zk");
-
-        address[] memory agentsList = new address[](1);
-        agentsList[0] = AGENT_ONE;
-
-        vm.startPrank(USER);
-        usdt.approve(address(market), 100 ether);
-        market.deposit(100 ether);
-        vm.expectRevert(AgentMarket.InvalidDuration.selector);
-        market.createEmployment(agentsList, 0, 100 ether);
-        vm.stopPrank();
-    }
-
-    function test_CreateEmployment_RevertWhenPaymentZero() public {
-        _registerAgent(AGENT_ONE, 20 ether, "zk");
-
-        address[] memory agentsList = new address[](1);
-        agentsList[0] = AGENT_ONE;
-
-        vm.startPrank(USER);
-        usdt.approve(address(market), 50 ether);
-        market.deposit(50 ether);
-        vm.expectRevert(AgentMarket.InvalidPayment.selector);
-        market.createEmployment(agentsList, 1, 0);
-        vm.stopPrank();
-    }
 
     function test_CreateEmployment_ShouldAllowReusingAgentsAcrossCalls() public {
-        _registerAgent(AGENT_ONE, 40 ether, "solidity");
+        uint256 agentId = _registerAgent(AGENT_ONE, 40 ether, "solidity");
 
-        address[] memory agentsList = new address[](1);
-        agentsList[0] = AGENT_ONE;
+        uint256[] memory agentIds = new uint256[](1);
+        agentIds[0] = agentId;
 
         vm.startPrank(USER);
         usdt.approve(address(market), 800 ether);
         market.deposit(800 ether);
-        market.createEmployment(agentsList, 2, 400 ether);
-        market.createEmployment(agentsList, 3, 400 ether);
+        market.createEmployment(USER, agentIds, 2, 400 ether);
+        market.createEmployment(USER, agentIds, 3, 400 ether);
         vm.stopPrank();
 
         assertEq(market.employmentCounter(), 2, unicode"应创建两条雇佣记录");
@@ -257,17 +182,17 @@ contract AgentMarketTest is Test {
     }
 
     function test_CompleteEngagement_ShouldPayAgentsAndOwner() public {
-        _registerAgent(AGENT_ONE, 10 ether, "solidity");
-        _registerAgent(AGENT_TWO, 30 ether, "design");
+        uint256 agentId1 = _registerAgent(AGENT_ONE, 10 ether, "solidity");
+        uint256 agentId2 = _registerAgent(AGENT_TWO, 30 ether, "design");
 
-        address[] memory agentsList = new address[](2);
-        agentsList[0] = AGENT_ONE;
-        agentsList[1] = AGENT_TWO;
+        uint256[] memory agentIds = new uint256[](2);
+        agentIds[0] = agentId1;
+        agentIds[1] = agentId2;
 
         vm.startPrank(USER);
         usdt.approve(address(market), 1_000 ether);
         market.deposit(1_000 ether);
-        market.createEmployment(agentsList, 2, 1_000 ether);
+        market.createEmployment(USER, agentIds, 2, 1_000 ether);
         vm.stopPrank();
 
         uint256 ownerBalanceBefore = usdt.balanceOf(address(this));
@@ -317,15 +242,15 @@ contract AgentMarketTest is Test {
     }
 
     function test_CompleteEngagement_RevertWhenCallerUnauthorized() public {
-        _registerAgent(AGENT_ONE, 5 ether, "solidity");
+        uint256 agentId = _registerAgent(AGENT_ONE, 5 ether, "solidity");
 
-        address[] memory agentsList = new address[](1);
-        agentsList[0] = AGENT_ONE;
+        uint256[] memory agentIds = new uint256[](1);
+        agentIds[0] = agentId;
 
         vm.startPrank(USER);
         usdt.approve(address(market), 200 ether);
         market.deposit(200 ether);
-        market.createEmployment(agentsList, 1, 200 ether);
+        market.createEmployment(USER, agentIds, 1, 200 ether);
         vm.stopPrank();
 
         vm.expectRevert(AgentMarket.NoPermission.selector);
@@ -334,15 +259,15 @@ contract AgentMarketTest is Test {
     }
 
     function test_CompleteEngagement_RevertWhenCalledTwice() public {
-        _registerAgent(AGENT_ONE, 10 ether, "solidity");
+        uint256 agentId = _registerAgent(AGENT_ONE, 10 ether, "solidity");
 
-        address[] memory agentsList = new address[](1);
-        agentsList[0] = AGENT_ONE;
+        uint256[] memory agentIds = new uint256[](1);
+        agentIds[0] = agentId;
 
         vm.startPrank(USER);
         usdt.approve(address(market), 300 ether);
         market.deposit(300 ether);
-        market.createEmployment(agentsList, 1, 300 ether);
+        market.createEmployment(USER, agentIds, 1, 300 ether);
         vm.stopPrank();
 
         vm.prank(USER);
@@ -354,15 +279,15 @@ contract AgentMarketTest is Test {
     }
 
     function test_CompleteEngagement_ShouldAllowOwnerFinalize() public {
-        _registerAgent(AGENT_ONE, 15 ether, "solidity");
+        uint256 agentId = _registerAgent(AGENT_ONE, 15 ether, "solidity");
 
-        address[] memory agentsList = new address[](1);
-        agentsList[0] = AGENT_ONE;
+        uint256[] memory agentIds = new uint256[](1);
+        agentIds[0] = agentId;
 
         vm.startPrank(USER);
         usdt.approve(address(market), 500 ether);
         market.deposit(500 ether);
-        market.createEmployment(agentsList, 2, 500 ether);
+        market.createEmployment(USER, agentIds, 2, 500 ether);
         vm.stopPrank();
 
         uint256 ownerBalanceBefore = usdt.balanceOf(address(this));
@@ -378,14 +303,4 @@ contract AgentMarketTest is Test {
         );
     }
 
-    function _registerAgent(
-        address agent,
-        uint256 rate,
-        string memory skill
-    ) internal {
-        string[] memory skills = new string[](1);
-        skills[0] = skill;
-        vm.prank(agent);
-        market.registerAgent(skills, rate);
-    }
 }

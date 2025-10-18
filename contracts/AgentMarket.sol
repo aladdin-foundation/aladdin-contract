@@ -28,6 +28,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     error AlreadyCompleted();
     error NoValidRates();
     error TransferFailed();
+    error DuplicateAgent();
 
     struct Agent {
         address agentAddress;
@@ -107,6 +108,12 @@ contract AgentMarket is Ownable, ReentrancyGuard {
             revert InvalidAgentsLength();
         if (duration == 0) revert InvalidDuration();
         if (payment == 0) revert InvalidPayment();
+        for (uint i = 0; i < agentAddresses.length; ++i) {
+            address agentAddr = agentAddresses[i];
+            for (uint j = i + 1; j < agentAddresses.length; ++j) {
+                if (agentAddr == agentAddresses[j]) revert DuplicateAgent();
+            }
+        }
 
         uint256 employmentId = ++employmentCounter;
         uint256 totalExpectedCost = 0;
@@ -169,27 +176,23 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         }
 
         uint256 sumBases = 0;
-        uint256 remainder = totalAgentShare;
         uint256[] memory amounts = new uint256[](numAgents);
         for (uint i = 0; i < numAgents; ++i) {
-            uint256 agentRate = agentRates[i];
-            uint256 base = (totalAgentShare * agentRate) / sumRates;
-            sumBases += base;
+            uint256 base = (totalAgentShare * agentRates[i]) / sumRates;
             amounts[i] = base;
+            sumBases += base;
+        }
 
-            // unchecked 无溢出风险的 +1 和 sum
-            unchecked {
-                remainder = totalAgentShare - sumBases;
-                if (i < remainder) {
-                    amounts[i] += 1;
-                }
-            }
+        uint256 remainder = totalAgentShare - sumBases;
+        for (uint i = 0; i < numAgents && remainder > 0; ++i) {
+            amounts[i] += 1;
+            remainder -= 1;
+        }
 
-            if (amounts[i] > 0) {
-                usdtToken.safeTransfer(emp.agents[i], amounts[i]);
-            } else {
-                revert TransferFailed();
-            }
+        for (uint i = 0; i < numAgents; ++i) {
+            uint256 amount = amounts[i];
+            if (amount == 0) revert TransferFailed();
+            usdtToken.safeTransfer(emp.agents[i], amount);
         }
 
         employmentBalances[_empId] = 0;

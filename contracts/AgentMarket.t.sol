@@ -30,7 +30,7 @@ contract AgentMarketTest is Test {
 
         AgentMarket.Agent memory stored = market.getAgent(AGENT_ONE);
         assertEq(stored.agentAddress, AGENT_ONE, unicode"Agent地址应被记录");
-        assertEq(stored.ratePerDay, 100 ether, unicode"价格应与注册值一致");
+        assertEq(stored.ratePer, 100 ether, unicode"价格应与注册值一致");
         assertEq(stored.skills.length, 1, unicode"技能列表长度异常");
         assertEq(
             keccak256(bytes(stored.skills[0])),
@@ -46,7 +46,7 @@ contract AgentMarketTest is Test {
         skills[0] = "ai";
         vm.prank(AGENT_ONE);
         vm.expectRevert(AgentMarket.AlreadyRegistered.selector);
-        market.registerAgent(skills, 1 ether);
+        market.registerAgent(skills, 1 ether, AgentMarket.PricingModel.TIME_BASED);
     }
 
     function test_CreateEmployment_RevertWhenAgentNotRegistered() public {
@@ -378,14 +378,93 @@ contract AgentMarketTest is Test {
         );
     }
 
+    function test_RegisterAgent_WithTaskBasedPricing() public {
+        _registerAgent(AGENT_ONE, 50 ether, "ai", AgentMarket.PricingModel.TASK_BASED);
+
+        AgentMarket.Agent memory stored = market.getAgent(AGENT_ONE);
+        assertEq(stored.agentAddress, AGENT_ONE, unicode"Agent地址应被记录");
+        assertEq(stored.ratePer, 50 ether, unicode"价格应与注册值一致");
+        assertTrue(
+            stored.pricingModel == AgentMarket.PricingModel.TASK_BASED,
+            unicode"定价模型应为按任务计费"
+        );
+    }
+
+    function test_CreateEmployment_WithTaskBasedAgent() public {
+        _registerAgent(AGENT_ONE, 10 ether, "ai", AgentMarket.PricingModel.TASK_BASED);
+
+        address[] memory agentsList = new address[](1);
+        agentsList[0] = AGENT_ONE;
+
+        vm.startPrank(USER);
+        usdt.approve(address(market), 500 ether);
+        market.deposit(500 ether);
+        // duration 在按任务计费时代表任务次数
+        market.createEmployment(agentsList, 30, 300 ether); // 30次任务
+        vm.stopPrank();
+
+        assertEq(market.userBalances(USER), 200 ether, unicode"托管余额应减少300");
+        assertEq(market.employmentBalances(1), 300 ether, unicode"雇佣合约应锁定300");
+    }
+
+    function test_CreateEmployment_RevertWhenMixedPricingModel() public {
+        _registerAgent(AGENT_ONE, 100 ether, "ai", AgentMarket.PricingModel.TIME_BASED);
+        _registerAgent(AGENT_TWO, 10 ether, "solidity", AgentMarket.PricingModel.TASK_BASED);
+
+        address[] memory agentsList = new address[](2);
+        agentsList[0] = AGENT_ONE;
+        agentsList[1] = AGENT_TWO;
+
+        vm.startPrank(USER);
+        usdt.approve(address(market), 1000 ether);
+        market.deposit(1000 ether);
+        vm.expectRevert(AgentMarket.MixedPricingModel.selector);
+        market.createEmployment(agentsList, 7, 800 ether);
+        vm.stopPrank();
+    }
+
+    function test_CompleteEngagement_WithTaskBasedAgent() public {
+        _registerAgent(AGENT_ONE, 20 ether, "blockchain", AgentMarket.PricingModel.TASK_BASED);
+
+        address[] memory agentsList = new address[](1);
+        agentsList[0] = AGENT_ONE;
+
+        vm.startPrank(USER);
+        usdt.approve(address(market), 500 ether);
+        market.deposit(500 ether);
+        market.createEmployment(agentsList, 10, 200 ether); // 10次任务
+        vm.stopPrank();
+
+        // 完成雇佣
+        vm.prank(USER);
+        market.completeEngagement(1);
+
+        // Agent 应收到 200 * (10000-200) / 10000 = 196 ether
+        uint256 expectedAgentPayment = 196 ether;
+        assertEq(
+            usdt.balanceOf(AGENT_ONE),
+            expectedAgentPayment,
+            unicode"Agent应收到扣除2%手续费后的报酬"
+        );
+    }
+
     function _registerAgent(
         address agent,
         uint256 rate,
         string memory skill
     ) internal {
+        _registerAgent(agent, rate, skill, AgentMarket.PricingModel.TIME_BASED);
+    }
+
+    function _registerAgent(
+        address agent,
+        uint256 rate,
+        string memory skill,
+        AgentMarket.PricingModel pricingModel
+    ) internal {
         string[] memory skills = new string[](1);
         skills[0] = skill;
         vm.prank(agent);
-        market.registerAgent(skills, rate);
+        market.registerAgent(skills, rate, pricingModel);
     }
 }

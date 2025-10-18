@@ -14,6 +14,8 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     uint256 public constant FEE_PRECISION = 10000;
     uint256 public constant MAX_AGENTS = 20; // Agent上限常量
 
+    // 定价模型枚举
+    enum PricingModel { TIME_BASED, TASK_BASED }
     error AlreadyRegistered();
     error InvalidRate();
     error EmptySkills();
@@ -30,12 +32,14 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     error TransferFailed();
     error DuplicateAgent();
     error InsufficientBalance();
+    error MixedPricingModel();
 
     struct Agent {
         address agentAddress;
-        uint256 ratePerDay; // 每天的收费标准
+        uint256 ratePer; // 每天的收费标准（TIME_BASED）或每次的收费标准（TASK_BASED）
         string[] skills; // 技能标签
         uint256 reputation; // 声誉积分，可以根据完成的job数量和质量来提升
+        PricingModel pricingModel; // 定价模型：按时间或按任务
     }
 
     struct Employment {
@@ -85,7 +89,8 @@ contract AgentMarket is Ownable, ReentrancyGuard {
 
     function registerAgent(
         string[] calldata _skills,
-        uint256 ratePerDay
+        uint256 ratePerDay,
+        PricingModel _pricingModel
     ) external {
         if (agents[msg.sender].agentAddress != address(0))
             revert AlreadyRegistered();
@@ -94,9 +99,10 @@ contract AgentMarket is Ownable, ReentrancyGuard {
 
         agents[msg.sender] = Agent({
             agentAddress: msg.sender,
-            ratePerDay: ratePerDay,
+            ratePer: ratePerDay,
             skills: _skills,
-            reputation: 0
+            reputation: 0,
+            pricingModel: _pricingModel
         });
         emit AgentRegistered(msg.sender, _skills, ratePerDay);
     }
@@ -121,7 +127,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     /**
      * Off-Chain协商后，上链建立雇佣关系（锁定报酬）
      * @param agentAddresses 被雇佣的Agent
-     * @param duration 雇佣持续时间（天）
+     * @param duration 雇佣持续时间（天）或任务次数，取决于Agent的定价模型
      * @param payment 支付金额
      */
     function createEmployment(
@@ -137,12 +143,19 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         uint256 employmentId = ++employmentCounter;
         uint256 totalExpectedCost = 0;
         uint256 length = agentAddresses.length;
+        PricingModel firstModel;
         for (uint i = 0; i < length; ++i) {
             address agentAddr = agentAddresses[i];
             if (agentSelectionCache[agentAddr]) revert DuplicateAgent();
             Agent storage agent = agents[agentAddr];
             if (agent.agentAddress == address(0)) revert AgentNotRegistered();
-            totalExpectedCost += agent.ratePerDay * duration;
+            // 检查所有Agent使用相同的定价模型
+            if (i == 0) {
+                firstModel = agent.pricingModel;
+            } else {
+                if (agent.pricingModel != firstModel) revert MixedPricingModel();
+            }
+            totalExpectedCost += agent.ratePer * duration;
             agentSelectionCache[agentAddr] = true;
         }
         if (payment < totalExpectedCost) revert PaymentTooLow();
@@ -187,11 +200,12 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         uint256 totalFee = (emp.payment * feePercentage) / FEE_PRECISION;
         uint256 totalAgentShare = emp.payment - totalFee;
 
+        // 计算每个 Agent 的权重（ratePer * duration）
         uint256 sumRates = 0;
         uint256[] memory agentRates = new uint256[](numAgents);
         for (uint i = 0; i < numAgents; ++i) {
             Agent storage agent = agents[emp.agents[i]];
-            agentRates[i] = agent.ratePerDay * emp.duration;
+            agentRates[i] = agent.ratePer * emp.duration;
             sumRates += agentRates[i];
         }
         if (sumRates == 0) revert NoValidRates();

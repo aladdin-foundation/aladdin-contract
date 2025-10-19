@@ -3,10 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "setup:forge": "bash scripts/setup-forge-std.sh",
-    "pretest:hardhat": "npm run setup:forge",
-    "test": "npx hardhat test",
-    "test:hardhat": "npx hardhat test"
+    "test": "npx hardhat test"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^4.0.1",

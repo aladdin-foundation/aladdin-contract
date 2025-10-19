@@ -276,4 +276,31 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     ) external view returns (uint256[] memory) {
         return ownerAgents[ownerAddr];
     }
+
+    /**
+     * 强制取消合同并退款给指定地址（通常用于异常情况）
+     * @param _empId 合同ID
+     * @param recipient 接收退款的地址（agent的owner地址）
+     */
+    function cancelEmploymentAndRefund(
+        uint256 _empId,
+        address recipient
+    ) external nonReentrant {
+        Employment storage emp = employments[_empId];
+        if (msg.sender != emp.user && msg.sender != owner())
+            revert NoPermission();
+        if (!emp.isActive) revert NotActive();
+        if (emp.isCompleted) revert AlreadyCompleted();
+        if (recipient == address(0)) revert InvalidPayment();
+
+        uint256 balance = employmentBalances[_empId];
+        if (balance == 0) revert InsufficientBalance();
+
+        // 删除合同记录
+        delete employments[_empId];
+        employmentBalances[_empId] = 0;
+
+        // 转账资金
+        usdtToken.safeTransfer(recipient, balance);
+    }
 }

@@ -1,159 +1,285 @@
-# YIDENG 代币经济模型设计
+# 🎁 Aladdin 奖励系统
 
 ## 概述
-YIDENG代币是Aladdin Agent平台的原生功能型代币，旨在激励用户参与、促进平台生态发展，并为代币持有者提供价值回报。
 
-## 代币基本信息
+Aladdin 奖励系统通过 **AladdinToken (ALD)** 激励生态参与者，包括 Agent 提供者和雇主。
 
-- **代币名称**: YIDENG Token
-- **代币符号**: YIDENG
-- **总供应量**: 1,000,000,000 YIDENG (10亿)
-- **精度**: 18位小数
-- **合约标准**: ERC20
+---
 
-## 代币分配
+## ✨ 核心功能
 
-### 初始分配
-- **财库 (Treasury)**: 50% (500,000,000 YIDENG)
-  - 用于平台发展、流动性激励、生态建设
-- **生态激励**: 50% (500,000,000 YIDENG)
-  - 用户奖励、质押收益、推广激励等
+### 1️⃣ 注册 Agent 奖励
 
-## 代币流通场景
+- **奖励金额**: 500 ALD（固定）
+- **领取条件**: 每个地址仅首次注册时获得
+- **防刷机制**: 同一地址多次注册只能领取一次
 
-### 1. 任务完成奖励
-- **基础完成奖励**: 任务金额的1%
-- **首次完成奖励**: 500 YIDENG额外奖励
-- **声誉奖励**: 根据用户声誉等级，最高可获得任务金额的0.5%
-- **质押奖励**: 质押用户可获得额外1.5%的奖励
-- **推荐奖励**: 推荐人可获得被推荐人任务金额的2%
+### 2️⃣ 完成任务奖励
 
-### 2. 用户成长奖励
-- **注册奖励**: 100 YIDENG
-- **身份验证奖励**: 200 YIDENG
-- **技能认证奖励**: 300 YIDENG
-- **任务创建奖励**: 50 YIDENG
+- **奖励金额**: 每个 Agent 500 ALD（固定）
+- **领取条件**: 雇佣关系完成时自动发放
+- **分配方式**: 每个参与的 Agent 平均分配
+- **防刷机制**:
+  - 每个雇佣关系只能领取一次
+  - 不允许雇佣自己的 Agent
 
-### 3. 活跃度奖励
-- **活跃度基础奖励**: 任务金额的0.25%
-- **连续活跃奖励**: 7天内活跃的用户可获得25 YIDENG
-- **活跃度积分系统**: 完成任务、验证身份等行为可获得活跃度积分
+---
 
-### 4. 质押系统
-- **质押APR**: 8%年化收益率
-- **质押奖励**: 质押用户在完成任务时获得1.5%的额外奖励
-- **Agent专属奖励**: 质押的Agent在完成任务时获得3%的额外奖励
+## 📊 代币分配
 
-## 核心合约
+### AladdinToken 总供应量
 
-### 1. YIDENGToken.sol
-- **功能**: 标准ERC20代币合约
-- **特性**:
-  - 质押功能
-  - 交易开启控制
-  - 白名单机制
-  - 市场专属mint权限
-
-### 2. YIDENGEconomics.sol
-- **功能**: 经济模型管理合约
-- **职责**:
-  - 管理所有奖励分发
-  - 用户统计和活跃度追踪
-  - 推荐系统管理
-  - 奖励开关控制
-
-### 3. YIDENGAgentMarket.sol
-- **功能**: 增强的Agent市场合约
-- **特性**:
-  - 继承原有AgentMarket功能
-  - 集成YIDENG代币奖励
-  - 增强的用户激励机制
-
-## 代币捕获价值机制
-
-### 1. 平台手续费
-- 所有平台交易收取2%的手续费
-- 手续费用于平台发展和代币回购
-
-### 2. 代币销毁机制
-- 可选的代币销毁功能，减少供应量
-- 销毁比例由社区治理决定
-
-### 3. 流动性挖矿
-- 为流动性提供者提供额外奖励
-- 鼓励在DEX上提供流动性
-
-## 风险控制机制
-
-### 1. 交易限制
-- 初期限制代币转账
-- 白名单用户可自由交易
-- 交易可由管理员逐步开启
-
-### 2. 奖励开关
-- 各类奖励可独立开启/关闭
-- 便于控制代币释放速度
-
-### 3. 最大供应量限制
-- 严格控制代币总供应量
-- 防止通货膨胀
-
-## 使用流程
-
-### 1. 用户注册流程
 ```
-用户注册 → 获得100 YIDENG注册奖励 → 设置推荐人 → 推荐人获得200 YIDENG
+1,000,000,000 ALD (10 亿)
 ```
 
-### 2. Agent认证流程
-```
-注册Agent → 身份验证(200 YIDENG) → 技能认证(300 YIDENG) → 开始接任务
-```
+### 初始分配建议
 
-### 3. 任务完成流程
 ```
-创建任务(50 YIDENG奖励) → Agent完成 → 获得USDT + YIDENG奖励 → 声誉提升
-```
-
-### 4. 质押流程
-```
-质押YIDENG → 获得8%年化收益 → 完成任务获得1.5%额外奖励 → 随时解押
+├─ 生态激励池（RewardManager）: 40% = 4 亿 ALD
+├─ 团队 & 顾问: 20% = 2 亿 ALD
+├─ 流动性挖矿: 15% = 1.5 亿 ALD
+├─ 社区治理: 10% = 1 亿 ALD
+├─ 初始流动性: 5% = 0.5 亿 ALD
+└─ 私募/公募: 10% = 1 亿 ALD
 ```
 
-## 统计和监控
+---
 
-### 1. 平台统计
-- 总奖励分发金额
-- 活跃用户数
-- 总质押量
-- 代币流通量
+## 🏗️ 合约架构
 
-### 2. 用户统计
-- 总收益
-- 完成任务数
-- 推荐数量
-- 活跃度分数
+```
+AladdinToken (ERC20)
+    ↓ 转账 4 亿代币
+RewardManager
+    ↓ 调用发放奖励
+AgentMarket
+    ├─ registerAgent() → 触发注册奖励
+    └─ completeEngagement() → 触发完成奖励
+```
 
-## 部署顺序
+### 核心合约
 
-1. 部署YIDENGToken合约
-2. 部署YIDENGEconomics合约
-3. 部署YIDENGAgentMarket合约
-4. 设置合约间的引用关系
-5. 开启交易和奖励功能
+#### 1. **RewardManager.sol**
 
-## 未来扩展
+奖励管理核心合约
 
-### 1. 治理功能
-- 代币持有者可参与平台治理
-- 投票决定平台发展方向
+- 持有奖励池代币（初始 4 亿 ALD）
+- 管理奖励规则和配置
+- 防止重复领取
+- 统计发放数据
 
-### 2. NFT集成
-- 技能认证NFT
-- 声誉等级NFT
+#### 2. **AgentMarket.sol**（已集成奖励）
 
-### 3. 跨链功能
-- 支持多链部署
-- 跨链代币转移
+业务逻辑层
 
-这个经济模型设计确保了YIDENG代币能够在平台内充分流通，同时为用户提供了多种获取代币的途径，促进了平台的健康发展。
+- 注册 Agent 时触发注册奖励
+- 完成雇佣时触发完成奖励
+- 防止自雇佣刷奖励
+
+#### 3. **AladdinToken.sol**
+
+ERC20 代币
+
+- 总供应量 10 亿
+- 符号: ALD
+- 名称: Aladdin Token
+
+---
+
+## 🚀 部署指南
+
+### 本地部署
+
+```bash
+# 使用 Hardhat 部署（自动选择预设 USDT 或部署测试代币）
+npx hardhat run scripts/deploy.js --network localhost
+
+# 部署到测试网
+npx hardhat run scripts/deploy.js --network sepolia
+```
+
+### 部署步骤
+
+1. 根据网络选择预设 USDT 地址（目前 Sepolia 默认 `0x7169...`）；若无预设地址则自动部署测试代币。
+2. 脚本自动部署新的 `AladdinToken`，随后部署 `RewardManager` 并绑定。
+3. 奖励池初始余额为 0，部署后可根据需要手动向 `RewardManager` 转入代币。
+
+---
+
+## 🧪 测试
+
+### 使用 Foundry 测试
+
+```bash
+# 安装 Foundry（如果未安装）
+curl -L https://foundry.paradigm.xyz | bash
+foundryup
+
+# 运行测试
+forge test --match-path contracts/RewardManager.t.sol -vv
+
+# 查看详细输出
+forge test --match-path contracts/RewardManager.t.sol -vvv
+```
+
+### 测试覆盖
+
+- ✅ 注册 Agent 获得 500 ALD
+- ✅ 同一地址不能重复领取注册奖励
+- ✅ 完成任务每个 Agent 获得 500 ALD
+- ✅ 同一雇佣关系不能重复领取完成奖励
+- ✅ 不能雇佣自己的 Agent（防刷）
+- ✅ Owner 可以调整奖励金额
+- ✅ 奖励池余额不足时报错
+- ✅ 统计数据正确
+
+---
+
+## 📖 使用示例
+
+### 示例 1: 注册 Agent 并获得奖励
+
+```javascript
+// 1. 准备技能数组
+const skills = ["Solidity", "Web3", "Smart Contracts"];
+const dailyRate = ethers.parseEther("100"); // 100 USDT/天
+
+// 2. 注册 Agent（自动获得 500 ALD 奖励）
+const tx = await agentMarket.registerAgent(skills, dailyRate);
+await tx.wait();
+
+// 3. 检查余额
+const aldBalance = await aladdinToken.balanceOf(userAddress);
+console.log("获得奖励:", ethers.formatEther(aldBalance), "ALD");
+// 输出: 获得奖励: 500.0 ALD
+```
+
+### 示例 2: 完成任务并获得奖励
+
+```javascript
+// 假设已注册 agentId = 1 和 agentId = 2
+
+// 1. 雇主充值 USDT
+await usdt.approve(agentMarketAddress, ethers.parseEther("1000"));
+await agentMarket.deposit(ethers.parseEther("1000"));
+
+// 2. 创建雇佣关系
+const agentIds = [1, 2];
+const duration = 3; // 3天
+const payment = ethers.parseEther("600"); // 600 USDT
+await agentMarket.createEmployment(
+  employerAddress,
+  agentIds,
+  duration,
+  payment
+);
+
+// 3. 完成任务（雇主或 owner 调用）
+await agentMarket.completeEngagement(1);
+
+// 4. 每个 Agent 自动收到:
+//    - USDT 分成（按 ratePer 比例）
+//    - 500 ALD 奖励
+```
+
+---
+
+## ⚙️ 管理功能
+
+### 调整奖励金额（仅 Owner）
+
+```javascript
+// 修改为新的奖励金额
+const newRegistrationReward = ethers.parseEther("1000"); // 1000 ALD
+const newCompletionReward = ethers.parseEther("2000"); // 2000 ALD
+
+await rewardManager.setRewardAmounts(
+  newRegistrationReward,
+  newCompletionReward
+);
+```
+
+### 提取剩余代币（仅 Owner）
+
+```javascript
+// 紧急情况下提取代币
+const amount = ethers.parseEther("1000000");
+await rewardManager.withdrawRemaining(ownerAddress, amount);
+```
+
+### 查看统计数据
+
+```javascript
+// 奖励池余额
+const poolBalance = await rewardManager.getRewardPoolBalance();
+console.log("奖励池余额:", ethers.formatEther(poolBalance), "ALD");
+
+// 总发放量
+const totalRewards = await rewardManager.totalRewardsDistributed();
+console.log("总发放量:", ethers.formatEther(totalRewards), "ALD");
+
+// 注册奖励总量
+const regRewards = await rewardManager.totalRegistrationRewards();
+console.log("注册奖励:", ethers.formatEther(regRewards), "ALD");
+
+// 完成奖励总量
+const compRewards = await rewardManager.totalCompletionRewards();
+console.log("完成奖励:", ethers.formatEther(compRewards), "ALD");
+```
+
+---
+
+## 🔐 安全机制
+
+### 防刷保护
+
+1. **注册奖励**: 每个地址只能领取一次
+2. **完成奖励**: 每个雇佣关系只能领取一次
+3. **自雇佣检查**: 不允许雇佣自己的 Agent
+4. **权限控制**: 只有 AgentMarket 可以调用奖励发放
+
+### 访问控制
+
+- ✅ ReentrancyGuard: 防止重入攻击
+- ✅ Ownable: Owner 权限管理
+- ✅ Custom Errors: Gas 优化
+
+---
+
+## 🔮 未来扩展
+
+当前版本是 **MVP（最小可行产品）**，后续可以扩展为更复杂的奖励机制：
+
+### Phase 2: 动态奖励
+
+```solidity
+// 基于任务价值的动态奖励
+基础奖励 = 任务金额 × 10%
+声誉加成 = 基础奖励 × (reputation / 1000)
+总奖励 = 基础奖励 × (1 + reputation / 1000)
+```
+
+### Phase 3: 质押系统
+
+- 质押 ALD 提升 Agent 排名
+- 质押 ALD 获得手续费折扣
+- 长期质押享受额外奖励
+
+### Phase 4: 治理系统
+
+- 投票决定手续费比例
+- 投票决定奖励参数
+- DAO 化治理机制
+
+---
+
+## 📞 支持
+
+如有问题或建议，请提交 Issue 或 PR。
+
+---
+
+## 📄 License
+
+MIT License

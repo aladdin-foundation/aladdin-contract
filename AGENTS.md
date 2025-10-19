@@ -3,7 +3,7 @@
 ## 项目结构与模块组织
 - `contracts/`：核心 Solidity 合约所在目录，`AgentMarket.sol` 负责雇佣撮合逻辑，`AladdinToken.sol` 提供测试用 ERC20；新增合约时保持单一职责，并在文件顶部注明 SPDX 与编译版本。
 - `test/`：存放 Foundry `.t.sol` 测试，例如 `AgentMarket.t.sol`；扩展 Hardhat TypeScript 测试时使用 `test/ts` 子目录避免冲突。
-- `scripts/`：部署与维护脚本，现有 `deploy.js` 用于 Hardhat 本地与远端网络部署；新增脚本命名约定为 `verb-target.js`。
+- `scripts/`：部署与维护脚本，`deploy.js` 会基于网络选择预设 USDT 地址（Sepolia 默认 `0x7169...`），若无匹配则自动部署测试代币，同时部署奖励代币并完成 `AgentMarket`+`RewardManager` 绑定。
 - `ignition/modules/`：Ignition 部署模块示例，建议仿照 `CounterModule` 编写并在模块返回结构体里暴露部署结果。
 - `artifacts/` 与 `cache/` 为 Hardhat 输出目录，禁止手动修改；需要清理时运行 `npx hardhat clean`。
 - `README.md` 与 `AGENTS.md` 汇总公共文档，新增流程或架构决策时请同步两份文件，保持新成员可快速上手。
@@ -13,7 +13,8 @@
 - `pnpm test`：使用 Foundry 运行 `.t.sol` 单元测试；首次执行前请确保通过 `foundryup` 安装工具链。
 - `pnpm run test:hardhat`：调用 Hardhat 的 TypeScript 测试套件，适用于端到端或脚本级验证。
 - `npx hardhat compile`：编译所有 Solidity 合约并刷新 `artifacts/`。
-- `npx hardhat node` + `npx hardhat run scripts/deploy.js --network localhost`：启动本地区块链并部署最新合约，用于集成调试。
+- `npx hardhat node` + `npx hardhat run scripts/deploy.js --network localhost`：启动本地区块链并部署最新合约；本地网络将自动部署测试代币与奖励代币。
+- `npm run deploy:local` / `npm run deploy:sepolia`：脚本自动使用预设 USDT 地址（或部署测试代币），并同时部署奖励代币。
 
 ## 编码风格与命名约定
 - Solidity 采用四空格缩进，合约命名使用 `PascalCase`，状态变量与函数使用 `camelCase`，常量以 `UPPER_SNAKE_CASE` 表示。

@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "setup:forge": "bash scripts/setup-forge-std.sh",
+    "pretest:hardhat": "npm run setup:forge",
+    "test": "npx hardhat test",
     "test:hardhat": "npx hardhat test"
   },
   "devDependencies": {
@@ -19,7 +22,8 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",
+    "dotenv": "^16.4.7",
     "solidity-docgen": "0.6.0-beta.36",
-    "dotenv": "^16.4.7"
+    "forge-std": "github:foundry-rs/forge-std#v1.9.7"
   }
 }

@@ -39,6 +39,9 @@ importers:
       ethers:
         specifier: ^6.15.0
         version: 6.15.0
+      forge-std:
+        specifier: github:foundry-rs/forge-std#v1.9.7
+        version: https://codeload.github.com/foundry-rs/forge-std/tar.gz/77041d2ce690e692d6e03cc812b57d1ddaa4d505
       hardhat:
         specifier: ^3.0.6
         version: 3.0.6
@@ -643,6 +646,10 @@ packages:
   fast-equals@5.3.0:
     resolution: {integrity: sha512-xwP+dG/in/nJelMOUEQBiIYeOoHKihWPB2sNZ8ZeDbZFoGb1OwTGMggGRgg6CRitNx7kmHgtIz2dOHDQ8Ap7Bw==}
     engines: {node: '>=6.0.0'}
+
+  forge-std@https://codeload.github.com/foundry-rs/forge-std/tar.gz/77041d2ce690e692d6e03cc812b57d1ddaa4d505:
+    resolution: {tarball: https://codeload.github.com/foundry-rs/forge-std/tar.gz/77041d2ce690e692d6e03cc812b57d1ddaa4d505}
+    version: 1.9.7
 
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
@@ -1568,6 +1575,8 @@ snapshots:
   eventemitter3@5.0.1: {}
 
   fast-equals@5.3.0: {}
+
+  forge-std@https://codeload.github.com/foundry-rs/forge-std/tar.gz/77041d2ce690e692d6e03cc812b57d1ddaa4d505: {}
 
   fsevents@2.3.3:
     optional: true

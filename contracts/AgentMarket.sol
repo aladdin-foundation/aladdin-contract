@@ -6,9 +6,15 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+interface IRewardManager {
+    function claimRegistrationReward(address agent) external;
+    function claimCompletionReward(uint256 employmentId, address[] calldata agents) external;
+}
+
 contract AgentMarket is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
     IERC20 public immutable usdtToken;
+    IRewardManager public rewardManager;
 
     uint256 public feePercentage = 200; // 2% fee (200 basis points)
     uint256 public constant FEE_PRECISION = 10000;
@@ -29,6 +35,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     error NoValidRates();
     error TransferFailed();
     error InsufficientBalance();
+    error CannotHireOwnAgent();
 
     struct Agent {
         uint256 id; // 唯一ID
@@ -78,9 +85,18 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         uint256[] amounts
     );
 
-    constructor(address _usdtAddress) Ownable(msg.sender) {
+    constructor(address _usdtAddress, address _rewardManager) Ownable(msg.sender) {
         if (_usdtAddress == address(0)) revert("Invalid token");
         usdtToken = IERC20(_usdtAddress);
+        rewardManager = IRewardManager(_rewardManager);
+    }
+
+    /**
+     * @notice 更新 RewardManager 地址（仅 owner）
+     */
+    function setRewardManager(address _rewardManager) external onlyOwner {
+        if (_rewardManager == address(0)) revert("Invalid address");
+        rewardManager = IRewardManager(_rewardManager);
     }
 
     function registerAgent(
@@ -96,17 +112,22 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         a.id = agentId;
         a.owner = msg.sender;
         a.ratePer = ratePer;
-        
+
         // Copy skills from calldata to storage explicitly
         for (uint256 i = 0; i < _skills.length; i++) {
             a.skills.push(_skills[i]);
         }
-        
+
         a.reputation = 0;
 
         ownerAgents[msg.sender].push(agentId);
 
         emit AgentRegistered(agentId, msg.sender, _skills, ratePer);
+
+        // 发放注册奖励
+        if (address(rewardManager) != address(0)) {
+            rewardManager.claimRegistrationReward(msg.sender);
+        }
     }
 
     // 1) 充值（需要先对 usdt.approve(market, amount)）
@@ -145,6 +166,9 @@ contract AgentMarket is Ownable, ReentrancyGuard {
             uint256 aid = agentIds[i];
             Agent storage agent = agents[aid];
             if (agent.owner == address(0)) revert AgentNotRegistered();
+
+            // 防止自雇佣（防止刷奖励）
+            if (agent.owner == payer) revert CannotHireOwnAgent();
 
             unchecked {
                 totalExpectedCost += agent.ratePer * duration;
@@ -228,6 +252,11 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         }
         emit PaymentReleased(_empId, agentOwners, amounts);
         emit EmploymentCompleted(_empId, emp.payment);
+
+        // 发放任务完成奖励
+        if (address(rewardManager) != address(0)) {
+            rewardManager.claimCompletionReward(_empId, agentOwners);
+        }
     }
 
     /**

@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(chmod +x /Users/hewei/Documents/web3/aladdin-contract/scripts/setup-forge-std.sh)"
-    ],
-    "deny": [],
-    "ask": []
-  }
-}

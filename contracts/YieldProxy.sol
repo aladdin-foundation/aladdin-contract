@@ -38,8 +38,10 @@ contract YieldProxy is Ownable, ReentrancyGuard {
     event Withdrawn(address indexed user, uint256 amount, uint256 yield, uint256 timestamp);
     event YieldClaimed(address indexed user, uint256 yieldAmount, uint256 timestamp);
     event FeeCollected(uint256 amount);
+    event StrategyRewardsClaimed(address indexed caller, uint256 amount);
     event StrategyChanged(address indexed oldStrategy, address indexed newStrategy, uint256 timestamp);
     event StrategyAuthorized(address indexed strategy, bool authorized);
+    event RewardTokenWithdrawn(address indexed token, address indexed to, uint256 amount);
 
     // Errors
     error ZeroAmount();
@@ -49,6 +51,8 @@ contract YieldProxy is Ownable, ReentrancyGuard {
     error WithdrawFailed();
     error StrategyNotAuthorized();
     error NoActiveStrategy();
+    error InsufficientFeeReserve();
+    error RewardTokenNotAllowed();
 
     modifier onlyValidStrategy() {
         if (address(currentStrategy) == address(0)) revert NoActiveStrategy();
@@ -71,18 +75,13 @@ contract YieldProxy is Ownable, ReentrancyGuard {
         // Transfer tokens from user to this contract
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
 
-        // Update user state before depositing to strategy
-        uint256 currentBalance = currentStrategy.getBalance();
-        uint256 userShare = totalDeposits > 0 ? (currentBalance * userDeposits[msg.sender]) / totalDeposits : 0;
-
         userDeposits[msg.sender] += amount;
         userPrincipal[msg.sender] += amount;
         totalDeposits += amount;
         totalPrincipal += amount;
         lastClaimTime[msg.sender] = block.timestamp;
 
-        // Approve and deposit to strategy
-        stakingToken.safeApprove(address(currentStrategy), amount);
+        stakingToken.safeIncreaseAllowance(address(currentStrategy), amount);
         currentStrategy.deposit(amount);
 
         emit Deposited(msg.sender, amount, block.timestamp);
@@ -123,28 +122,33 @@ contract YieldProxy is Ownable, ReentrancyGuard {
      * @notice 取出所有质押和收益
      */
     function withdrawAll() external nonReentrant onlyValidStrategy {
-        if (userDeposits[msg.sender] == 0) revert InsufficientBalance();
+        uint256 userDeposit = userDeposits[msg.sender];
+        if (userDeposit == 0) revert InsufficientBalance();
 
-        // Claim all yield
+        // Claim all yield first
         uint256 yieldAmount = _claimYield(msg.sender);
-        uint256 userAmount = userDeposits[msg.sender];
-
-        // Update user state
-        userDeposits[msg.sender] = 0;
         uint256 principalAmount = userPrincipal[msg.sender];
+
+        // Update accounting before interacting with策略
+        userDeposits[msg.sender] = 0;
         userPrincipal[msg.sender] = 0;
-        totalDeposits -= userAmount;
+        totalDeposits -= userDeposit;
         totalPrincipal -= principalAmount;
 
-        // Withdraw all from strategy
-        try currentStrategy.withdrawAll() returns (uint256 withdrawnAmount) {
-            // Transfer all tokens to user
-            stakingToken.safeTransfer(msg.sender, withdrawnAmount);
+        uint256 withdrawnAmount = 0;
+        if (principalAmount > 0) {
+            try currentStrategy.withdraw(principalAmount) returns (uint256 amount) {
+                withdrawnAmount = amount;
+            } catch {
+                revert WithdrawFailed();
+            }
 
-            emit Withdrawn(msg.sender, withdrawnAmount, yieldAmount, block.timestamp);
-        } catch {
-            revert WithdrawFailed();
+            if (withdrawnAmount < principalAmount) revert WithdrawFailed();
+
+            stakingToken.safeTransfer(msg.sender, withdrawnAmount);
         }
+
+        emit Withdrawn(msg.sender, withdrawnAmount, yieldAmount, block.timestamp);
     }
 
     /**
@@ -160,31 +164,50 @@ contract YieldProxy is Ownable, ReentrancyGuard {
     function _claimYield(address user) internal returns (uint256) {
         if (userDeposits[user] == 0 || totalDeposits == 0) return 0;
 
-        // Calculate current balance and user's share
         uint256 totalBalance = currentStrategy.getBalance();
         uint256 userShare = (totalBalance * userDeposits[user]) / totalDeposits;
-        uint256 yieldAmount = userShare > userPrincipal[user] ? userShare - userPrincipal[user] : 0;
+        uint256 principalAmount = userPrincipal[user];
 
-        if (yieldAmount > 0) {
-            // Calculate and collect fee
-            uint256 fee = (yieldAmount * FEE_PERCENTAGE) / FEE_PRECISION;
-            uint256 userYield = yieldAmount - fee;
+        if (userShare <= principalAmount) {
+            lastClaimTime[user] = block.timestamp;
+            return 0;
+        }
 
-            // Update total fees
+        uint256 grossYield = userShare - principalAmount;
+        uint256 withdrawnAmount;
+
+        try currentStrategy.withdraw(grossYield) returns (uint256 amount) {
+            withdrawnAmount = amount;
+        } catch {
+            return 0;
+        }
+
+        if (withdrawnAmount == 0) {
+            return 0;
+        }
+
+        if (withdrawnAmount < grossYield) {
+            grossYield = withdrawnAmount;
+        }
+
+        uint256 fee = (grossYield * FEE_PERCENTAGE) / FEE_PRECISION;
+        uint256 userYield = grossYield - fee;
+
+        if (userYield > 0) {
+            stakingToken.safeTransfer(user, userYield);
+        }
+
+        if (fee > 0) {
             totalFees += fee;
-
-            // Withdraw yield for user
-            try currentStrategy.withdraw(userYield) returns (uint256 withdrawnYield) {
-                stakingToken.safeTransfer(user, withdrawnYield);
-                emit YieldClaimed(user, withdrawnYield, block.timestamp);
-            } catch {
-                // Yield withdrawal failed, return 0
-                yieldAmount = 0;
-            }
         }
 
         lastClaimTime[user] = block.timestamp;
-        return yieldAmount;
+
+        if (userYield > 0) {
+            emit YieldClaimed(user, userYield, block.timestamp);
+        }
+
+        return userYield;
     }
 
     /**
@@ -208,6 +231,7 @@ contract YieldProxy is Ownable, ReentrancyGuard {
      */
     function getUserAPR(address user) external view onlyValidStrategy returns (uint256) {
         if (userDeposits[user] == 0 || lastClaimTime[user] == 0) return 0;
+        if (userPrincipal[user] == 0) return 0;
 
         uint256 timeElapsed = block.timestamp - lastClaimTime[user];
         if (timeElapsed == 0) return 0;
@@ -258,25 +282,34 @@ contract YieldProxy is Ownable, ReentrancyGuard {
      * @notice 切换策略 (需要先从旧策略取出所有资金)
      * @param newStrategy 新策略地址
      */
-    function switchStrategy(address newStrategy) external onlyOwner {
+    function switchStrategy(address newStrategy) external onlyOwner nonReentrant {
         if (!authorizedStrategies[newStrategy]) revert StrategyNotAuthorized();
 
         address oldStrategy = address(currentStrategy);
 
-        // If there's an active strategy, withdraw all funds
+        if (IYieldStrategy(newStrategy).getAssetToken() != address(stakingToken)) {
+            revert InvalidStrategy();
+        }
+
+        uint256 reallocateAmount = 0;
         if (oldStrategy != address(0)) {
             try currentStrategy.withdrawAll() returns (uint256 withdrawnAmount) {
-                // Approve new strategy to use the withdrawn funds
-                stakingToken.safeApprove(newStrategy, withdrawnAmount);
+                reallocateAmount = withdrawnAmount;
             } catch {
                 revert WithdrawFailed();
             }
+
+            stakingToken.forceApprove(oldStrategy, 0);
         }
 
-        // Update strategy
         currentStrategy = IYieldStrategy(newStrategy);
         strategyHistory.push(newStrategy);
         strategyTimestamps[newStrategy] = block.timestamp;
+
+        if (reallocateAmount > 0) {
+            stakingToken.safeIncreaseAllowance(newStrategy, reallocateAmount);
+            currentStrategy.deposit(reallocateAmount);
+        }
 
         emit StrategyChanged(oldStrategy, newStrategy, block.timestamp);
     }
@@ -287,11 +320,10 @@ contract YieldProxy is Ownable, ReentrancyGuard {
     function claimRewards() external nonReentrant onlyValidStrategy {
         try currentStrategy.getRewards() returns (uint256 rewardAmount) {
             if (rewardAmount > 0) {
-                stakingToken.safeTransfer(msg.sender, rewardAmount);
-                emit YieldClaimed(msg.sender, rewardAmount, block.timestamp);
+                emit StrategyRewardsClaimed(msg.sender, rewardAmount);
             }
         } catch {
-            // Rewards claim failed
+            // ignore失败，等待下次
         }
     }
 
@@ -299,17 +331,15 @@ contract YieldProxy is Ownable, ReentrancyGuard {
      * @notice 管理员提取手续费
      */
     function withdrawFees() external onlyOwner {
-        if (totalFees > 0) {
-            uint256 feesToWithdraw = totalFees;
-            totalFees = 0;
+        uint256 feesToWithdraw = totalFees;
+        if (feesToWithdraw == 0) return;
 
-            try currentStrategy.withdraw(feesToWithdraw) returns (uint256 withdrawnFees) {
-                stakingToken.safeTransfer(owner(), withdrawnFees);
-                emit FeeCollected(withdrawnFees);
-            } catch {
-                totalFees = feesToWithdraw; // Revert on failure
-            }
-        }
+        uint256 contractBalance = stakingToken.balanceOf(address(this));
+        if (contractBalance < feesToWithdraw) revert InsufficientFeeReserve();
+
+        totalFees = 0;
+        stakingToken.safeTransfer(owner(), feesToWithdraw);
+        emit FeeCollected(feesToWithdraw);
     }
 
     /**
@@ -331,5 +361,14 @@ contract YieldProxy is Ownable, ReentrancyGuard {
      */
     function getStrategyHistory() external view returns (address[] memory) {
         return strategyHistory;
+    }
+
+    function withdrawRewardToken(address token, address to, uint256 amount) external onlyOwner nonReentrant {
+        if (token == address(stakingToken)) revert RewardTokenNotAllowed();
+        if (to == address(0)) revert InvalidStrategy();
+        if (amount == 0) revert ZeroAmount();
+
+        IERC20(token).safeTransfer(to, amount);
+        emit RewardTokenWithdrawn(token, to, amount);
     }
 }

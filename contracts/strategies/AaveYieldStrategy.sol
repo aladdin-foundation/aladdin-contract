@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "../../interfaces/IYieldStrategy.sol";
+import "../interfaces/IYieldStrategy.sol";
 
 interface IAaveLendingPool {
     function deposit(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;
@@ -68,11 +68,13 @@ contract AaveYieldStrategy is IYieldStrategy, Ownable {
         lendingPool = IAaveLendingPool(_lendingPool);
 
         // Get incentives controller from aToken
+        address controllerAddress;
         try aToken.getIncentivesController() returns (address controller) {
-            incentivesController = IAaveIncentivesController(controller);
+            controllerAddress = controller;
         } catch {
-            incentivesController = IAaveIncentivesController(address(0));
+            controllerAddress = address(0);
         }
+        incentivesController = IAaveIncentivesController(controllerAddress);
 
         // Set initial APR (should be updated via oracle)
         estimatedAPR = 300; // 3% initial APR
@@ -88,8 +90,8 @@ contract AaveYieldStrategy is IYieldStrategy, Ownable {
         // Transfer tokens from caller to this contract
         assetToken.safeTransferFrom(msg.sender, address(this), amount);
 
-        // Approve Aave lending pool
-        assetToken.safeApprove(address(lendingPool), amount);
+        // Approve Aave lending pool（累计授权避免非零到零再设的兼容性问题）
+        assetToken.safeIncreaseAllowance(address(lendingPool), amount);
 
         // Deposit to Aave
         try lendingPool.deposit(address(assetToken), amount, address(this), 0) {

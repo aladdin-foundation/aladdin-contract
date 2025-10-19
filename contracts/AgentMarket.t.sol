@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "./AgentMarket.sol";
 import "./AladdinToken.sol";
+import "./RewardManager.sol";
 
 contract AgentMarketTest is Test {
     AgentMarket internal market;
@@ -42,6 +43,32 @@ contract AgentMarketTest is Test {
         vm.prank(agentOwner);
         market.registerAgent(skills, ratePer);
         return market.agentCounter();
+    }
+
+    function _registerAgentOnMarket(
+        AgentMarket targetMarket,
+        address agentOwner,
+        uint256 ratePer,
+        string memory skill
+    ) internal returns (uint256) {
+        string[] memory skills = new string[](1);
+        skills[0] = skill;
+        vm.prank(agentOwner);
+        targetMarket.registerAgent(skills, ratePer);
+        return targetMarket.agentCounter();
+    }
+
+    function _deployMarketWithRewards(
+        uint256 rewardPool
+    )
+        internal
+        returns (AgentMarket newMarket, RewardManager manager, AladdinToken rewardToken)
+    {
+        rewardToken = new AladdinToken(address(this));
+        newMarket = new AgentMarket(address(usdt), address(0));
+        manager = new RewardManager(address(rewardToken), address(newMarket));
+        newMarket.setRewardManager(address(manager));
+        rewardToken.transfer(address(manager), rewardPool);
     }
 
     function test_RegisterAgent_ShouldPersistMetadata() public {
@@ -363,8 +390,6 @@ contract AgentMarketTest is Test {
         skills[1] = "javascript";
         skills[2] = "python";
 
-        uint256 agentId = _registerAgent(AGENT_ONE, 30 ether, "solidity");
-
         // 手动注册带多个技能的Agent
         vm.prank(AGENT_TWO);
         market.registerAgent(skills, 30 ether);
@@ -498,14 +523,10 @@ contract AgentMarketTest is Test {
         vm.prank(USER);
         market.completeEngagement(1);
 
-        uint256 agent1Balance = usdt.balanceOf(AGENT_ONE);
-        uint256 agent2Balance = usdt.balanceOf(AGENT_TWO);
-        uint256 ownerBalance = usdt.balanceOf(address(this));
-
         // 验证总和正确
         uint256 fee = (payment * market.feePercentage()) / market.FEE_PRECISION();
         assertEq(
-            agent1Balance + agent2Balance + fee,
+            usdt.balanceOf(AGENT_ONE) + usdt.balanceOf(AGENT_TWO) + fee,
             payment,
             unicode"总支付金额不正确"
         );
@@ -583,21 +604,9 @@ contract AgentMarketTest is Test {
         uint256 agent2Expected = (totalShare * 40) / 120;
         uint256 agent3Expected = (totalShare * 60) / 120;
 
-        assertGt(usdt.balanceOf(AGENT_ONE), 0, unicode"Agent1应收到款项");
-        assertGt(usdt.balanceOf(AGENT_TWO), 0, unicode"Agent2应收到款项");
-        assertGt(usdt.balanceOf(agent3), 0, unicode"Agent3应收到款项");
-
-        // 验证Agent2收到的是Agent1的两倍左右
-        assertGt(
-            usdt.balanceOf(AGENT_TWO),
-            usdt.balanceOf(AGENT_ONE),
-            unicode"Agent2收入应大于Agent1"
-        );
-        assertGt(
-            usdt.balanceOf(agent3),
-            usdt.balanceOf(AGENT_TWO),
-            unicode"Agent3收入应大于Agent2"
-        );
+        assertEq(usdt.balanceOf(AGENT_ONE), agent1Expected, unicode"Agent1 收款应符合预期");
+        assertEq(usdt.balanceOf(AGENT_TWO), agent2Expected, unicode"Agent2 收款应符合预期");
+        assertEq(usdt.balanceOf(agent3), agent3Expected, unicode"Agent3 收款应符合预期");
     }
 
     // getOwnerAgents 测试
@@ -738,6 +747,96 @@ contract AgentMarketTest is Test {
         uint256 agentBalance = usdt.balanceOf(AGENT_ONE);
         uint256 ownerBalance = usdt.balanceOf(address(this));
         assertGt(agentBalance + ownerBalance, 0, unicode"应该有一些资金被分配");
+    }
+
+    function test_CompleteEngagement_WithRewardManagerShouldDistributeCompletionRewards() public {
+        (AgentMarket rewardMarket, RewardManager manager, AladdinToken rewardToken) =
+            _deployMarketWithRewards(10_000 ether);
+
+        uint256 agentId1 = _registerAgentOnMarket(rewardMarket, AGENT_ONE, 10 ether, "solidity");
+        uint256 agentId2 = _registerAgentOnMarket(rewardMarket, AGENT_TWO, 20 ether, "design");
+
+        uint256[] memory agentIds = new uint256[](2);
+        agentIds[0] = agentId1;
+        agentIds[1] = agentId2;
+
+        vm.startPrank(USER);
+        usdt.approve(address(rewardMarket), 1_000 ether);
+        rewardMarket.deposit(1_000 ether);
+        rewardMarket.createEmployment(USER, agentIds, 1, 1_000 ether);
+        vm.stopPrank();
+
+        uint256 agent1RewardBefore = rewardToken.balanceOf(AGENT_ONE);
+        uint256 agent2RewardBefore = rewardToken.balanceOf(AGENT_TWO);
+        uint256 totalCompletionBefore = manager.totalCompletionRewards();
+        uint256 totalDistributedBefore = manager.totalRewardsDistributed();
+
+        vm.prank(USER);
+        rewardMarket.completeEngagement(1);
+
+        uint256 rewardPerAgent = manager.completionReward();
+        assertEq(
+            rewardToken.balanceOf(AGENT_ONE),
+            agent1RewardBefore + rewardPerAgent,
+            unicode"Agent1 完成奖励应到账"
+        );
+        assertEq(
+            rewardToken.balanceOf(AGENT_TWO),
+            agent2RewardBefore + rewardPerAgent,
+            unicode"Agent2 完成奖励应到账"
+        );
+        assertEq(
+            manager.totalCompletionRewards(),
+            totalCompletionBefore + rewardPerAgent * 2,
+            unicode"完成奖励统计应增加两份"
+        );
+        assertEq(
+            manager.totalRewardsDistributed(),
+            totalDistributedBefore + rewardPerAgent * 2,
+            unicode"总发放统计应同步更新"
+        );
+        assertTrue(
+            manager.hasClaimedEmployment(1),
+            unicode"RewardManager 应标记雇佣ID为已领取"
+        );
+    }
+
+    function test_CompleteEngagement_ShouldRevertWhenRewardPoolInsufficient() public {
+        (AgentMarket rewardMarket, RewardManager manager, AladdinToken rewardToken) =
+            _deployMarketWithRewards(5_000 ether);
+
+        uint256 agentId = _registerAgentOnMarket(rewardMarket, AGENT_ONE, 15 ether, "python");
+
+        uint256[] memory agentIds = new uint256[](1);
+        agentIds[0] = agentId;
+
+        vm.startPrank(USER);
+        usdt.approve(address(rewardMarket), 500 ether);
+        rewardMarket.deposit(500 ether);
+        rewardMarket.createEmployment(USER, agentIds, 1, 500 ether);
+        vm.stopPrank();
+
+        uint256 requiredReward = manager.completionReward();
+        uint256 targetBalance = requiredReward - 1;
+        uint256 currentBalance = rewardToken.balanceOf(address(manager));
+        manager.withdrawRemaining(address(this), currentBalance - targetBalance);
+
+        vm.expectRevert(RewardManager.InsufficientRewardBalance.selector);
+        vm.prank(USER);
+        rewardMarket.completeEngagement(1);
+
+        (, , , , bool isActiveAfter, bool isCompletedAfter) = rewardMarket.employments(1);
+        assertTrue(isActiveAfter, unicode"雇佣应保持激活状态");
+        assertFalse(isCompletedAfter, unicode"雇佣不应被标记为完成");
+        assertEq(
+            rewardMarket.employmentBalances(1),
+            500 ether,
+            unicode"托管金额不应被扣减"
+        );
+        assertFalse(
+            manager.hasClaimedEmployment(1),
+            unicode"RewardManager 不应标记为已领取"
+        );
     }
 
     function test_GetAgent_ShouldReturnCorrectData() public {

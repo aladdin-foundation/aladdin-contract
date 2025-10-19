@@ -173,6 +173,94 @@ contract RewardManagerTest is Test {
         vm.stopPrank();
     }
 
+    /// 测试只有 AgentMarket 可以调用完成奖励发放
+    function test_CompletionReward_ShouldRevertWhenCallerNotAgentMarket() public {
+        address[] memory agentOwners = new address[](1);
+        agentOwners[0] = agent1;
+
+        vm.expectRevert(RewardManager.OnlyAgentMarket.selector);
+        rewardManager.claimCompletionReward(10, agentOwners);
+    }
+
+    /// 测试完成奖励只能领取一次
+    function test_CompletionReward_ShouldRevertWhenEmploymentAlreadyClaimed() public {
+        address[] memory agentOwners = new address[](2);
+        agentOwners[0] = agent1;
+        agentOwners[1] = agent2;
+
+        vm.prank(address(agentMarket));
+        rewardManager.claimCompletionReward(77, agentOwners);
+
+        assertTrue(
+            rewardManager.hasClaimedEmployment(77),
+            unicode"雇佣记录应标记为已领取"
+        );
+        assertEq(
+            rewardManager.totalCompletionRewards(),
+            rewardManager.completionReward() * 2,
+            unicode"完成奖励统计应累加两次"
+        );
+
+        vm.expectRevert(RewardManager.AlreadyClaimed.selector);
+        vm.prank(address(agentMarket));
+        rewardManager.claimCompletionReward(77, agentOwners);
+    }
+
+    /// 测试奖励池余额不足时领取完成奖励会失败
+    function test_CompletionReward_ShouldRevertWhenPoolInsufficient() public {
+        // 先提取走绝大部分奖励代币，只保留不足以支付一次奖励的余额
+        uint256 balance = aladdinToken.balanceOf(address(rewardManager));
+        rewardManager.withdrawRemaining(owner, balance - 100);
+
+        address[] memory agentOwners = new address[](1);
+        agentOwners[0] = agent1;
+
+        vm.expectRevert(RewardManager.InsufficientRewardBalance.selector);
+        vm.prank(address(agentMarket));
+        rewardManager.claimCompletionReward(88, agentOwners);
+    }
+
+    /// 测试多名 Agent 领取完成奖励时统计数据和余额更新正确
+    function test_CompletionReward_ShouldUpdateTotalsForMultipleAgents() public {
+        address[] memory agentOwners = new address[](2);
+        agentOwners[0] = agent1;
+        agentOwners[1] = agent2;
+
+        uint256 agent1BalanceBefore = aladdinToken.balanceOf(agent1);
+        uint256 agent2BalanceBefore = aladdinToken.balanceOf(agent2);
+
+        vm.prank(address(agentMarket));
+        rewardManager.claimCompletionReward(99, agentOwners);
+
+        uint256 rewardPerAgent = rewardManager.completionReward();
+        assertEq(
+            aladdinToken.balanceOf(agent1),
+            agent1BalanceBefore + rewardPerAgent,
+            unicode"Agent1 完成奖励金额异常"
+        );
+        assertEq(
+            aladdinToken.balanceOf(agent2),
+            agent2BalanceBefore + rewardPerAgent,
+            unicode"Agent2 完成奖励金额异常"
+        );
+
+        uint256 expectedTotal = rewardPerAgent * agentOwners.length;
+        assertEq(
+            rewardManager.totalCompletionRewards(),
+            expectedTotal,
+            unicode"完成奖励统计应等于两名 Agent 的总和"
+        );
+        assertEq(
+            rewardManager.totalRewardsDistributed(),
+            expectedTotal,
+            unicode"总奖励发放应与完成奖励保持一致"
+        );
+        assertTrue(
+            rewardManager.hasClaimedEmployment(99),
+            unicode"雇佣记录应被标记为已领取"
+        );
+    }
+
     /// 测试防止自雇佣
     function test_CannotHireOwnAgent() public {
         // 1. employer 注册 Agent

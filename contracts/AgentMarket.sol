@@ -36,6 +36,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     error TransferFailed();
     error InsufficientBalance();
     error CannotHireOwnAgent();
+    error InvalidRecipient();
 
     struct Agent {
         uint256 id; // 唯一ID
@@ -84,6 +85,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         address[] agents,
         uint256[] amounts
     );
+    event EmploymentEnded(uint256 indexed employmentId, address indexed recipient, uint256 amount);
 
     constructor(address _usdtAddress, address _rewardManager) Ownable(msg.sender) {
         if (_usdtAddress == address(0)) revert("Invalid token");
@@ -278,11 +280,11 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     }
 
     /**
-     * 强制取消合同并退款给指定地址（通常用于异常情况）
+     * 结束合同并支付金额给agent的owner
      * @param _empId 合同ID
-     * @param recipient 接收退款的地址（agent的owner地址）
+     * @param recipient 接收的地址（agent的owner地址）
      */
-    function cancelEmploymentAndRefund(
+    function completeEngagementAndPay(
         uint256 _empId,
         address recipient
     ) external nonReentrant {
@@ -293,6 +295,15 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         if (emp.isCompleted) revert AlreadyCompleted();
         if (recipient == address(0)) revert InvalidPayment();
 
+        bool isValidRecipient = false;
+        for (uint i = 0; i < emp.agents.length; ++i) {
+            if (agents[emp.agents[i]].owner == recipient) {
+                isValidRecipient = true;
+                break;
+            }
+        }
+        if (!isValidRecipient) revert InvalidRecipient();
+
         uint256 balance = employmentBalances[_empId];
         if (balance == 0) revert InsufficientBalance();
 
@@ -302,5 +313,6 @@ contract AgentMarket is Ownable, ReentrancyGuard {
 
         // 转账资金
         usdtToken.safeTransfer(recipient, balance);
+        emit EmploymentEnded(_empId, recipient, balance); // 需要在合约中定义这个事件
     }
 }

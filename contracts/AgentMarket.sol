@@ -21,7 +21,6 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     uint256 public constant MAX_AGENTS = 20; // Agent上限常量
 
     error AlreadyRegistered();
-    error InvalidRate();
     error EmptySkills();
     error NoAgentsSpecified();
     error InvalidDuration();
@@ -105,7 +104,6 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         string[] calldata _skills,
         uint256 ratePer
     ) external {
-        if (ratePer == 0) revert InvalidRate();
         if (_skills.length == 0) revert EmptySkills();
 
         uint256 agentId = ++agentCounter;

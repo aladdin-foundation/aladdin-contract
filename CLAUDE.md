@@ -24,7 +24,7 @@ npx hardhat clean && npx hardhat compile
 
 ### Deployment
 ```bash
-# Deploy to Sepolia testnet
+# Deploy to Sepolia testnet (uses preset USDT or deploys mock for unknown networks)
 npx hardhat run scripts/deploy.js --network sepolia
 
 # Verify contracts on Etherscan

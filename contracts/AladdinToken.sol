@@ -5,8 +5,10 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract AladdinToken is ERC20, Ownable {
-    constructor(address owner_) ERC20("Aladdin Token", "Al") Ownable(owner_) {
-        _mint(owner_, 100000000 ether);
+    uint256 public constant TOTAL_SUPPLY = 1_000_000_000 * 10 ** 18; // 10 亿代币
+
+    constructor(address owner_) ERC20("Aladdin Token", "ALD") Ownable(owner_) {
+        _mint(owner_, TOTAL_SUPPLY);
     }
 
     function mint(address to, uint256 amount) external onlyOwner {

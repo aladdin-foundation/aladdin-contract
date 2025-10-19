@@ -1,94 +1,75 @@
+import "dotenv/config";
 import hre from "hardhat";
-import fs from "fs";
 
-console.log("🚀 Deploying Enhanced Agent Market with NFT Rating System...");
+const { ethers, network } = hre;
 
-// Sepolia Testnet USDT Contract Address
-const USDT_ADDRESS = "0x7169D38820dfd117C3FA1f22a697dBA58d90BA06";
+const PRESET_USDT = {
+  sepolia: "0x7169D38820dfd117C3FA1f22a697dBA58d90BA06",
+};
+
+async function deployAladdinToken(label, owner) {
+  const factory = await ethers.getContractFactory("AladdinToken");
+  const token = await factory.deploy(owner);
+  await token.waitForDeployment();
+  const address = await token.getAddress();
+  console.log(`${label} 已部署: ${address}`);
+  return address;
+}
+
+async function resolveUsdtAddress(deployer) {
+  const preset = PRESET_USDT[network.name];
+  if (preset && ethers.isAddress(preset)) {
+    console.log(`使用预设 ${network.name} USDT 地址: ${preset}`);
+    return preset;
+  }
+
+  console.log(
+    `网络 ${network.name} 未配置预设 USDT，将部署测试代币用作支付代币...`
+  );
+  return deployAladdinToken("MockUSDT", deployer.address);
+}
 
 async function main() {
-  console.log("📋 Step 1: Deploying AgentMarketFactory...");
+  const [deployer] = await ethers.getSigners();
+  console.log(`部署账户: ${deployer.address}`);
 
-  // Deploy AgentMarketFactory which will deploy both contracts
-  const AgentMarketFactory = await hre.ethers.getContractFactory("AgentMarketFactory");
+  const usdtAddress = await resolveUsdtAddress(deployer);
 
-  const marketConfig = {
-    usdtToken: USDT_ADDRESS,
-    feePercentage: 200 // 2%
-  };
+  const AgentMarket = await ethers.getContractFactory("AgentMarket");
+  const agentMarket = await AgentMarket.deploy(usdtAddress, ethers.ZeroAddress);
+  await agentMarket.waitForDeployment();
+  const agentMarketAddress = await agentMarket.getAddress();
+  console.log(`AgentMarket 部署成功: ${agentMarketAddress}`);
 
-  const factory = await AgentMarketFactory.deploy(marketConfig);
-
-  await factory.waitForDeployment();
-
-  console.log(`✅ AgentMarketFactory deployed to: ${factory.target}`);
-
-  // Get the deployed contracts
-  const agentMarket = await factory.agentMarket();
-  const ratingNFT = await factory.ratingNFT();
-
-  console.log(`🏪 AgentMarket deployed to: ${agentMarket}`);
-  console.log(`⭐ RatingNFT deployed to: ${ratingNFT}`);
-
-  // Deploy DisputeResolution contract
-  console.log("⚖️  Step 2: Deploying DisputeResolution contract...");
-
-  const DisputeResolution = await hre.ethers.getContractFactory("DisputeResolution");
-  const disputeResolution = await DisputeResolution.deploy(agentMarket);
-
-  await disputeResolution.waitForDeployment();
-
-  console.log(`✅ DisputeResolution deployed to: ${disputeResolution.target}`);
-
-  // Verify contracts on Etherscan (optional)
-  console.log("⏳ Waiting for block confirmations...");
-
-  // Wait for 6 block confirmations for more reliable verification
-  await factory.deploymentTransaction().wait(6);
-  await disputeResolution.deploymentTransaction().wait(6);
-
-  console.log("🎉 Deployment completed successfully!");
-  console.log("📊 Contract Addresses:");
-  console.log(`   AgentMarketFactory: ${factory.target}`);
-  console.log(`   AgentMarket: ${agentMarket}`);
-  console.log(`   RatingNFT: ${ratingNFT}`);
-  console.log(`   DisputeResolution: ${disputeResolution.target}`);
-  console.log(`   USDT: ${USDT_ADDRESS}`);
-
-  // Save deployment info to a file
-  const deploymentInfo = {
-    network: hre.network.name,
-    AgentMarketFactory: factory.target,
-    AgentMarket: agentMarket,
-    RatingNFT: ratingNFT,
-    DisputeResolution: disputeResolution.target,
-    USDT: USDT_ADDRESS,
-    deploymentTime: new Date().toISOString(),
-    features: [
-      "✅ Fixed fee calculation bugs",
-      "✅ 3-day payment delay mechanism",
-      "✅ Enhanced security controls",
-      "✅ Mutual rating NFT system",
-      "✅ AI-powered matching algorithm",
-      "✅ Reputation scoring system"
-    ]
-  };
-
-  fs.writeFileSync(
-    'deployment-info.json',
-    JSON.stringify(deploymentInfo, null, 2)
+  const rewardTokenAddress = await deployAladdinToken(
+    "AladdinToken (Reward)",
+    deployer.address
   );
 
-  console.log("📄 Deployment info saved to deployment-info.json");
+  const RewardManager = await ethers.getContractFactory("RewardManager");
+  const rewardManager = await RewardManager.deploy(
+    rewardTokenAddress,
+    agentMarketAddress
+  );
+  await rewardManager.waitForDeployment();
+  const rewardManagerAddress = await rewardManager.getAddress();
+  console.log(`RewardManager 部署成功: ${rewardManagerAddress}`);
 
-  console.log("\n🔮 Next Steps:");
-  console.log("1. Verify contracts on Etherscan");
-  console.log("2. Set up frontend integration");
-  console.log("3. Configure IPFS for NFT metadata");
-  console.log("4. Test the mutual rating system");
+  const setTx = await agentMarket.setRewardManager(rewardManagerAddress);
+  await setTx.wait();
+  console.log("AgentMarket 已成功绑定 RewardManager。");
+
+  console.log("\n部署完成，关键地址：");
+  console.log(`USDT Token:      ${usdtAddress}`);
+  console.log(`AgentMarket:     ${agentMarketAddress}`);
+  console.log(`Reward Token:    ${rewardTokenAddress}`);
+  console.log(`RewardManager:   ${rewardManagerAddress}`);
+  console.log(
+    "\n提示：RewardManager 奖励池初始余额为 0，可按需手动调用奖励代币合约 transfer() 转入额度。"
+  );
 }
 
 main().catch((error) => {
-  console.error("❌ Deployment failed:", error);
+  console.error("部署失败:", error);
   process.exitCode = 1;
 });

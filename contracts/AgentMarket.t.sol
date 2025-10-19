@@ -23,7 +23,9 @@ contract AgentMarketTest is Test {
 
     function setUp() public {
         usdt = new AladdinToken(address(this));
-        market = new AgentMarket(address(usdt));
+        // AgentMarket 现在需要两个参数：USDT地址和RewardManager地址
+        // 测试中暂时不使用奖励功能，传入 address(0)
+        market = new AgentMarket(address(usdt), address(0));
 
         // 为测试账号注入资金
         usdt.mint(USER, INITIAL_USER_FUNDS);

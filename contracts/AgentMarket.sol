@@ -60,13 +60,11 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     mapping(address => uint256[]) public ownerAgents; // owner address => agentIds
     mapping(uint256 => Employment) public employments;
     mapping(uint256 => uint256) public employmentBalances;
+    mapping(address => uint256) public userBalances;
     uint256 public agentCounter;
     uint256 public employmentCounter;
 
-    // 新增：用户托管余额
-    mapping(address => uint256) public userBalances;
     event Deposited(address indexed user, uint256 amount);
-
     event AgentRegistered(
         uint256 indexed agentId,
         address indexed owner,

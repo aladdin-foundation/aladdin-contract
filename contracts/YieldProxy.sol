@@ -74,9 +74,10 @@ contract YieldProxy is Ownable, ReentrancyGuard {
     function deposit(uint256 amount) external nonReentrant onlyValidStrategy {
         if (amount == 0) revert ZeroAmount();
 
-        // Transfer tokens from user to this contract
+        // 1. 接收用户资金
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
 
+        // 2. 更新用户数据
         userDeposits[msg.sender] += amount;
         userPrincipal[msg.sender] += amount;
         totalDeposits += amount;
@@ -84,6 +85,7 @@ contract YieldProxy is Ownable, ReentrancyGuard {
         lastClaimTime[msg.sender] = block.timestamp;
 
         stakingToken.safeIncreaseAllowance(address(currentStrategy), amount);
+        // 3. 转入当前策略
         currentStrategy.deposit(amount);
 
         emit Deposited(msg.sender, amount, block.timestamp);
@@ -97,19 +99,19 @@ contract YieldProxy is Ownable, ReentrancyGuard {
         if (amount == 0) revert ZeroAmount();
         if (userDeposits[msg.sender] < amount) revert InsufficientBalance();
 
-        // Claim yield before withdrawal
+        // 1. 先领取收益
         _claimYield(msg.sender);
 
-        // Calculate principal portion to withdraw
+        // 2. 计算本金比例
         uint256 principalPortion = (userPrincipal[msg.sender] * amount) / userDeposits[msg.sender];
 
-        // Update user state
+        // 3. 更新状态
         userDeposits[msg.sender] -= amount;
         userPrincipal[msg.sender] -= principalPortion;
         totalDeposits -= amount;
         totalPrincipal -= principalPortion;
 
-        // Withdraw from strategy
+        // 4. 从策略提款
         try currentStrategy.withdraw(amount) returns (uint256 withdrawnAmount) {
             // Transfer tokens to user
             stakingToken.safeTransfer(msg.sender, withdrawnAmount);

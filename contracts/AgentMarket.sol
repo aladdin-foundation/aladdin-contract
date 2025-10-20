@@ -44,7 +44,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     struct Agent {
         uint256 id; // 唯一ID
         address owner; // Agent拥有者地址
-        uint256 ratePer; // 每天的收费标准
+        uint256 ratePer; // 收费标准
         string[] skills; // 技能标签
         uint256 reputation; // 声誉积分，可以根据完成的job数量和质量来提升
     }

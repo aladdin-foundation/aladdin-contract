@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../contracts/YieldProxy.sol";
-import "../contracts/strategies/AaveYieldStrategy.sol";
+import "./YieldProxy.sol";
+import "./strategies/AaveYieldStrategy.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**

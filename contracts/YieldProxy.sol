@@ -7,6 +7,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IYieldStrategy.sol";
 
+// 代理模式的DeFi收益聚合系统，
+// YieldProxy - 用户交互层（代理合约）
 contract YieldProxy is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 

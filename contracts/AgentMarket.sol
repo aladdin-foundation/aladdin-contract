@@ -16,9 +16,12 @@ contract AgentMarket is Ownable, ReentrancyGuard {
     IERC20 public immutable usdtToken;
     IRewardManager public rewardManager;
 
+    // 平台手续费
     uint256 public feePercentage = 200; // 2% fee (200 basis points)
+    // 手续费精度
     uint256 public constant FEE_PRECISION = 10000;
-    uint256 public constant MAX_AGENTS = 20; // Agent上限常量
+    // Agent上限常量
+    uint256 public constant MAX_AGENTS = 20; 
 
     error AlreadyRegistered();
     error InvalidRate();
@@ -46,6 +49,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         uint256 reputation; // 声誉积分，可以根据完成的job数量和质量来提升
     }
 
+    // 雇佣关系结构体
     struct Employment {
         address user; // 雇主
         uint256[] agents; // 被雇佣的Agent数组
@@ -151,6 +155,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         uint256 duration,
         uint256 payment
     ) external {
+        //  1. Agent 数量验证
         if (agentIds.length == 0 || agentIds.length > MAX_AGENTS)
             revert InvalidAgentsLength();
         if (duration == 0) revert InvalidDuration();
@@ -162,6 +167,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         uint256 totalExpectedCost = 0;
         uint256 length = agentIds.length;
 
+        // 2. 计算期望成本
         for (uint i = 0; i < length; ++i) {
             uint256 aid = agentIds[i];
             Agent storage agent = agents[aid];
@@ -174,6 +180,7 @@ contract AgentMarket is Ownable, ReentrancyGuard {
                 totalExpectedCost += agent.ratePer * duration;
             }
         }
+        //  3.支付金额验证
         if (payment < totalExpectedCost) revert PaymentTooLow();
 
         // 锁定资金：从用户托管余额扣除对应金额
@@ -199,16 +206,19 @@ contract AgentMarket is Ownable, ReentrancyGuard {
      */
     function completeEngagement(uint256 _empId) external nonReentrant {
         Employment storage emp = employments[_empId];
+        // 1.只有雇主或合约 Owner 可以完成 ，权限验证
         if (msg.sender != emp.user && msg.sender != owner())
             revert NoPermission();
         if (!emp.isActive) revert NotActive();
         if (emp.isCompleted) revert AlreadyCompleted();
 
         uint256 numAgents = emp.agents.length;
+        // 2. 计算手续费
         uint256 totalFee = (emp.payment * feePercentage) / FEE_PRECISION;
         uint256 totalAgentShare = emp.payment - totalFee;
 
         uint256 sumRates = 0;
+        // 3. 计算各 Agent 的权重
         uint256[] memory agentRates = new uint256[](numAgents);
         for (uint i = 0; i < numAgents; ++i) {
             Agent storage agent = agents[emp.agents[i]];
@@ -216,26 +226,28 @@ contract AgentMarket is Ownable, ReentrancyGuard {
             sumRates += agentRates[i];
         }
         if (sumRates == 0) revert NoValidRates();
-
-        // 先转移手续费给owner
+        // 4.先转移手续费给owner
         if (totalFee > 0) {
             usdtToken.safeTransfer(owner(), totalFee);
         }
 
         uint256 sumBases = 0;
         uint256[] memory amounts = new uint256[](numAgents);
+        // 5. 处理分配余数  
         for (uint i = 0; i < numAgents; ++i) {
             uint256 base = (totalAgentShare * agentRates[i]) / sumRates;
             amounts[i] = base;
             sumBases += base;
         }
 
+        // 6.余数处理（防止精度损失）**
         uint256 remainder = totalAgentShare - sumBases;
         for (uint i = 0; i < numAgents && remainder > 0; ++i) {
             amounts[i] += 1;
             remainder -= 1;
         }
 
+        //7. 转账给各 Agent 的 owner
         for (uint i = 0; i < numAgents; ++i) {
             uint256 amount = amounts[i];
             if (amount == 0) revert TransferFailed();
@@ -247,13 +259,14 @@ contract AgentMarket is Ownable, ReentrancyGuard {
         emp.isActive = false;
 
         address[] memory agentOwners = new address[](numAgents);
+        // 8.**步骤 6: 转账并触发奖励**
         for (uint i = 0; i < numAgents; ++i) {
             agentOwners[i] = agents[emp.agents[i]].owner;
         }
         emit PaymentReleased(_empId, agentOwners, amounts);
         emit EmploymentCompleted(_empId, emp.payment);
 
-        // 发放任务完成奖励
+        // 9. 发放任务完成奖励
         if (address(rewardManager) != address(0)) {
             rewardManager.claimCompletionReward(_empId, agentOwners);
         }

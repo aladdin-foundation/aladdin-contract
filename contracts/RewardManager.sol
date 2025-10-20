@@ -11,18 +11,21 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @dev MVP 版本：注册和完成任务都发放固定数量代币，后续可扩展为复杂计算
  */
 contract RewardManager is Ownable, ReentrancyGuard {
+    // ALD 代币合约
     IERC20 public immutable aladdinToken;
+    // 授权调用者
     address public agentMarket;
 
     // 奖励配置（可由 owner 调整）
     uint256 public registrationReward = 500 * 10**18;  // 注册奖励 500 ALD
     uint256 public completionReward = 500 * 10**18;    // 完成任务奖励 500 ALD
 
-    // 防刷机制
+    // 防刷机制，地址 → 是否已领取注册奖励
     mapping(address => bool) public hasClaimedRegistration;
+    // 雇佣ID → 是否已领取完成
     mapping(uint256 => bool) public hasClaimedEmployment; // employmentId => claimed
 
-    // 统计数据
+    // 统计数据，
     uint256 public totalRewardsDistributed;
     uint256 public totalRegistrationRewards;
     uint256 public totalCompletionRewards;

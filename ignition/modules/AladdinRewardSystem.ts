@@ -74,32 +74,32 @@ export default buildModule("AladdinRewardSystem", (m) => {
     id: "FundRewardPool",
   });
 
-  // 7. 部署 YieldProxy
-  const yieldProxy = m.contract("YieldProxy", [usdt], {
-    id: "YieldProxy",
-  });
+  // // 7. 部署 YieldProxy
+  // const yieldProxy = m.contract("YieldProxy", [usdt], {
+  //   id: "YieldProxy",
+  // });
 
-  let aaveYieldStrategy;
-  const shouldDeployAaveStrategy =
-    aTokenAddress !== ZERO_ADDRESS && lendingPoolAddress !== ZERO_ADDRESS;
+  // let aaveYieldStrategy;
+  // const shouldDeployAaveStrategy =
+  //   aTokenAddress !== ZERO_ADDRESS && lendingPoolAddress !== ZERO_ADDRESS;
 
-  if (shouldDeployAaveStrategy) {
-    aaveYieldStrategy = m.contract(
-      "AaveYieldStrategy",
-      [usdt, aTokenAddress, lendingPoolAddress],
-      {
-        id: "AaveYieldStrategy",
-      }
-    );
+  // if (shouldDeployAaveStrategy) {
+  //   aaveYieldStrategy = m.contract(
+  //     "AaveYieldStrategy",
+  //     [usdt, aTokenAddress, lendingPoolAddress],
+  //     {
+  //       id: "AaveYieldStrategy",
+  //     }
+  //   );
 
-    m.call(yieldProxy, "authorizeStrategy", [aaveYieldStrategy], {
-      id: "AuthorizeAaveStrategy",
-    });
+  //   m.call(yieldProxy, "authorizeStrategy", [aaveYieldStrategy], {
+  //     id: "AuthorizeAaveStrategy",
+  //   });
 
-    m.call(yieldProxy, "switchStrategy", [aaveYieldStrategy], {
-      id: "SwitchToAaveStrategy",
-    });
-  }
+  //   m.call(yieldProxy, "switchStrategy", [aaveYieldStrategy], {
+  //     id: "SwitchToAaveStrategy",
+  //   });
+  // }
 
   // 返回部署的合约实例
   return {

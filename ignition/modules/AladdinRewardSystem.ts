@@ -23,27 +23,11 @@ export default buildModule("AladdinRewardSystem", (m) => {
   // 获取部署账户
   const deployer = m.getAccount(0);
 
-  // 参数：USDT 地址（可通过 --parameters 覆盖）
-  const usdtAddress = m.getParameter("usdtAddress", ZERO_ADDRESS);
-  const aTokenAddress = m.getParameter("aTokenAddress", ZERO_ADDRESS);
-  const lendingPoolAddress = m.getParameter(
-    "lendingPoolAddress",
-    ZERO_ADDRESS
-  );
-
-  // 1. 部署或使用现有 USDT
-  let usdt;
-  if (usdtAddress === ZERO_ADDRESS) {
-    // 部署测试 USDT
-    usdt = m.contract("AladdinToken", [deployer], {
-      id: "MockUSDT",
-    });
-  } else {
-    // 使用现有 USDT 地址
-    usdt = m.contractAt("AladdinToken", usdtAddress, {
-      id: "USDT",
-    });
-  }
+  // 1. 部署测试 USDT（使用 AladdinToken 作为 mock）
+  // 注意：即使在 Sepolia，也使用 mock 以便测试
+  const usdt = m.contract("AladdinToken", [deployer], {
+    id: "MockUSDT",
+  });
 
   // 2. 部署 AladdinToken (10 亿供应量)
   const aladdinToken = m.contract("AladdinToken", [deployer], {
@@ -79,27 +63,8 @@ export default buildModule("AladdinRewardSystem", (m) => {
     id: "YieldProxy",
   });
 
-  let aaveYieldStrategy;
-  const shouldDeployAaveStrategy =
-    aTokenAddress !== ZERO_ADDRESS && lendingPoolAddress !== ZERO_ADDRESS;
-
-  if (shouldDeployAaveStrategy) {
-    aaveYieldStrategy = m.contract(
-      "AaveYieldStrategy",
-      [usdt, aTokenAddress, lendingPoolAddress],
-      {
-        id: "AaveYieldStrategy",
-      }
-    );
-
-    m.call(yieldProxy, "authorizeStrategy", [aaveYieldStrategy], {
-      id: "AuthorizeAaveStrategy",
-    });
-
-    m.call(yieldProxy, "switchStrategy", [aaveYieldStrategy], {
-      id: "SwitchToAaveStrategy",
-    });
-  }
+  // 注意：跳过 AaveYieldStrategy 部署
+  // 需要有效的 Aave 协议地址才能部署，建议通过单独模块部署
 
   // 返回部署的合约实例
   return {
@@ -108,6 +73,5 @@ export default buildModule("AladdinRewardSystem", (m) => {
     agentMarket,
     rewardManager,
     yieldProxy,
-    aaveYieldStrategy,
   };
 });

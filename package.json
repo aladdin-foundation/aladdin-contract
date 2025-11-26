@@ -3,7 +3,16 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "test": "npx hardhat test"
+    "test": "npx hardhat test",
+    "compile": "npx hardhat compile",
+    "clean": "npx hardhat clean",
+    "clean:ignition": "rm -rf ignition/deployments",
+    "clean:all": "npm run clean && npm run clean:ignition",
+    "deploy:sepolia": "npm run clean:ignition && npx hardhat ignition deploy ignition/modules/AladdinRewardSystem.ts --network sepolia",
+    "deploy:local": "npm run clean:ignition && npx hardhat ignition deploy ignition/modules/AladdinRewardSystem.ts --network localhost",
+    "deploy:mainnet": "npm run clean:ignition && npx hardhat ignition deploy ignition/modules/AladdinRewardSystem.ts --network mainnet",
+    "verify": "npx hardhat run scripts/auto-verify.ts --network sepolia",
+    "verify:local": "npm run verify localhost"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^4.0.1",

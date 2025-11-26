@@ -27,11 +27,20 @@ npx hardhat clean && npx hardhat compile
 ### Deployment
 
 ```bash
-# Deploy to Sepolia testnet (uses preset USDT or deploys mock for unknown networks)
-npx hardhat run scripts/deploy.js --network sepolia
+# Deploy to Sepolia testnet
+npm run deploy:sepolia
 
-# Verify contracts on Etherscan
-npx hardhat verify --network sepolia <CONTRACT_ADDRESS> <CONSTRUCTOR_ARGS>
+# Deploy to localhost (uses mock USDT)
+npm run deploy:local
+
+# Verify all deployed contracts automatically
+npm run verify:sepolia
+
+# Verify contracts on localhost
+npm run verify:local
+
+# Manual verification on blockchain explorer
+npx hardhat verify --network monadTestnet <CONTRACT_ADDRESS> <CONSTRUCTOR_ARGS>
 ```
 
 ## Architecture
